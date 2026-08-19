@@ -10,7 +10,9 @@ from apps.certificates.serializers import CertificateSerializer, CertificateTemp
 from apps.certificates.services import build_preview_pdf, regenerate_all_certificates, verify_certificate
 from apps.core.constants import Roles
 from apps.core.mixins import CompanyScopedViewSetMixin
-from apps.core.permissions import HasPermCode, IsCompanyAdmin, _role
+from apps.core.permissions import HasPermCode, HasRole, IsCompanyAdmin, _role
+
+IsCertificateAdmin = HasRole.for_roles(Roles.HR, Roles.COMPANY_ADMIN, Roles.TRAINING_CENTER_ADMIN)
 
 
 class CertificateTemplateViewSet(CompanyScopedViewSetMixin, viewsets.ModelViewSet):
@@ -46,10 +48,15 @@ class CertificateTemplateViewSet(CompanyScopedViewSetMixin, viewsets.ModelViewSe
         return HttpResponse(pdf_bytes, content_type='application/pdf')
 
 
-class CertificateViewSet(viewsets.ReadOnlyModelViewSet):
+class CertificateViewSet(viewsets.ModelViewSet):
     serializer_class = CertificateSerializer
-    permission_classes = [HasPermCode.for_code('certificate.view')]
     filterset_fields = ['course', 'path', 'is_revoked']
+    http_method_names = ['get', 'delete', 'head', 'options']
+
+    def get_permissions(self):
+        if self.action == 'destroy':
+            return [IsCertificateAdmin()]
+        return [HasPermCode.for_code('certificate.view')()]
 
     def get_queryset(self):
         user = self.request.user
