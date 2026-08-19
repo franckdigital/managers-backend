@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.core.constants import Roles
-from apps.core.permissions import HasRole
+from apps.core.permissions import HasPermCode, HasRole
 from apps.gamification.models import Badge, Challenge, ChallengeParticipation, Level
 from apps.gamification.serializers import (
     BadgeSerializer,
@@ -34,7 +34,7 @@ class BadgeViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ('list', 'retrieve'):
-            return [permissions.IsAuthenticated()]
+            return [HasPermCode.for_code('gamif.view')()]
         return [IsCompanyAdminOrHR()]
 
 
@@ -44,7 +44,9 @@ class ChallengeViewSet(viewsets.ModelViewSet):
     filterset_fields = ['company']
 
     def get_permissions(self):
-        if self.action in ('list', 'retrieve', 'join'):
+        if self.action in ('list', 'retrieve'):
+            return [HasPermCode.for_code('gamif.view')()]
+        if self.action == 'join':
             return [permissions.IsAuthenticated()]
         return [IsCompanyAdminOrHR()]
 

@@ -17,7 +17,7 @@ from apps.assessments.serializers import (
 )
 from apps.assessments.services import grade_attempt, is_attempt_expired, record_proctoring_event, start_attempt
 from apps.core.constants import Roles
-from apps.core.permissions import HasRole
+from apps.core.permissions import HasPermCode, HasRole
 
 IsContentManager = HasRole.for_roles(Roles.TRAINER, Roles.COMPANY_ADMIN, Roles.TRAINING_CENTER_ADMIN)
 
@@ -62,7 +62,9 @@ class AssessmentViewSet(viewsets.ModelViewSet):
     filterset_fields = ['course', 'chapter', 'assessment_type']
 
     def get_permissions(self):
-        if self.action in ('list', 'retrieve', 'start'):
+        if self.action in ('list', 'retrieve'):
+            return [HasPermCode.for_code('assessment.view')()]
+        if self.action == 'start':
             return [permissions.IsAuthenticated()]
         return [IsContentManager()]
 

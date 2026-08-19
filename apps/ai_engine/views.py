@@ -16,14 +16,14 @@ from apps.ai_engine.serializers import (
 )
 from apps.ai_engine.services import detect_learning_difficulties, generate_recommendations_for_user
 from apps.core.constants import Roles
-from apps.core.permissions import HasRole
+from apps.core.permissions import HasPermCode, HasRole
 
 IsHRorManager = HasRole.for_roles(Roles.HR, Roles.MANAGER, Roles.COMPANY_ADMIN)
 
 
 class AIConversationViewSet(viewsets.ModelViewSet):
     serializer_class = AIConversationSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasPermCode.for_code('ai.use')]
 
     def get_queryset(self):
         return AIConversation.objects.filter(user=self.request.user).prefetch_related('messages')
@@ -35,7 +35,7 @@ class AIConversationViewSet(viewsets.ModelViewSet):
 class ChatView(APIView):
     """Lot 9 — tutorat intelligent: conversational assistant scoped to a course."""
 
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasPermCode.for_code('ai.use')]
 
     def post(self, request):
         serializer = ChatRequestSerializer(data=request.data)

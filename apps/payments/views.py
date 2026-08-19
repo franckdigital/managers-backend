@@ -6,7 +6,7 @@ from rest_framework.views import APIView
 
 from apps.catalog.models import Cart, Coupon
 from apps.core.constants import Roles
-from apps.core.permissions import HasRole
+from apps.core.permissions import HasPermCode, HasRole
 from apps.payments.models import Order, Payout
 from apps.payments.providers import get_provider
 from apps.payments.serializers import CheckoutSerializer, OrderSerializer, PayoutSerializer
@@ -24,7 +24,7 @@ from apps.payments.services import (
 
 class OrderViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = OrderSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [HasPermCode.for_code('payment.view')]
     filterset_fields = ['status', 'order_type']
 
     def get_queryset(self):

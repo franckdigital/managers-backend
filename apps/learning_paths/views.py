@@ -24,7 +24,7 @@ class LearningPathViewSet(CompanyScopedViewSetMixin, viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ('list', 'retrieve'):
-            return [permissions.IsAuthenticated()]
+            return [HasPermCode.for_code('learning_path.view')()]
         return [IsHRorManager()]
 
     def perform_create(self, serializer):

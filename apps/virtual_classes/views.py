@@ -4,7 +4,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from apps.core.constants import Roles
-from apps.core.permissions import HasRole
+from apps.core.permissions import HasPermCode, HasRole
 from apps.virtual_classes.models import VirtualClass, VirtualClassAttendance, VirtualClassQuestion
 from apps.virtual_classes.serializers import (
     AttendanceSignatureSerializer,
@@ -24,7 +24,9 @@ class VirtualClassViewSet(viewsets.ModelViewSet):
     filterset_fields = ['provider', 'company', 'chapter']
 
     def get_permissions(self):
-        if self.action in ('list', 'retrieve', 'join', 'leave', 'ask', 'sign_attendance'):
+        if self.action in ('list', 'retrieve'):
+            return [HasPermCode.for_code('vclass.view')()]
+        if self.action in ('join', 'leave', 'ask', 'sign_attendance'):
             return [permissions.IsAuthenticated()]
         return [IsContentManager()]
 

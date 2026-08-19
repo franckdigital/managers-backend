@@ -5,6 +5,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
+from apps.core.permissions import HasPermCode
 from apps.social.models import Conversation, ForumPost, ForumThread, LearningGroup, MentorshipRelation, Message
 from apps.social.serializers import (
     ConversationSerializer,
@@ -19,7 +20,7 @@ from apps.social.serializers import (
 class ForumThreadViewSet(viewsets.ModelViewSet):
     queryset = ForumThread.objects.select_related('author', 'course').prefetch_related('posts').all()
     serializer_class = ForumThreadSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasPermCode.for_code('social.view')]
     filterset_fields = ['course', 'is_pinned', 'is_closed']
     search_fields = ['title']
 

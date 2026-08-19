@@ -8,7 +8,7 @@ from rest_framework.views import APIView
 
 from apps.core.constants import Roles
 from apps.core.mixins import AuditLogMixin
-from apps.core.permissions import HasRole
+from apps.core.permissions import HasPermCode, HasRole
 from apps.courses.models import (
     Chapter,
     Course,
@@ -403,7 +403,7 @@ class TrainingRequestViewSet(viewsets.ModelViewSet):
     """Training requests submitted by managers/employees; reviewed by HR or company admin."""
 
     serializer_class = TrainingRequestSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasPermCode.for_code('training_request.view')]
     filterset_fields = ['status', 'urgency', 'requested_by', 'for_user']
 
     def get_queryset(self):

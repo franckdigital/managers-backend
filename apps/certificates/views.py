@@ -10,7 +10,7 @@ from apps.certificates.serializers import CertificateSerializer, CertificateTemp
 from apps.certificates.services import build_preview_pdf, regenerate_all_certificates, verify_certificate
 from apps.core.constants import Roles
 from apps.core.mixins import CompanyScopedViewSetMixin
-from apps.core.permissions import IsCompanyAdmin, _role
+from apps.core.permissions import HasPermCode, IsCompanyAdmin, _role
 
 
 class CertificateTemplateViewSet(CompanyScopedViewSetMixin, viewsets.ModelViewSet):
@@ -48,7 +48,7 @@ class CertificateTemplateViewSet(CompanyScopedViewSetMixin, viewsets.ModelViewSe
 
 class CertificateViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = CertificateSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [HasPermCode.for_code('certificate.view')]
     filterset_fields = ['course', 'path', 'is_revoked']
 
     def get_queryset(self):
