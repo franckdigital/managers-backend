@@ -48,6 +48,24 @@ class IsTrainer(HasRole):
     allowed_roles = {Roles.TRAINER}
 
 
+class HasPermCode(BasePermission):
+    """Usage: permission_classes = [HasPermCode.for_code('session.view')]
+    Delegates to User.has_perm_code(), which checks the Droits & Permissions
+    matrix (RolePermission) for the caller's role — superusers/SUPER_ADMIN bypass."""
+
+    code = None
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not (user and user.is_authenticated):
+            return False
+        return user.has_perm_code(self.code)
+
+    @classmethod
+    def for_code(cls, code):
+        return type('HasPermCodeScoped', (cls,), {'code': code})
+
+
 class IsSameCompany(BasePermission):
     """Object-level: a user may only access objects belonging to their own company.
     Super admins bypass this check entirely (platform-wide access)."""

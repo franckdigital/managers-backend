@@ -19,6 +19,7 @@ class UserSerializer(serializers.ModelSerializer):
     company_subscription_status = serializers.CharField(source='company.subscription_status', read_only=True, default=None)
     manager_name = serializers.CharField(source='manager.get_full_name', read_only=True, default=None)
     has_subsidiaries = serializers.SerializerMethodField()
+    permission_codes = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -27,11 +28,20 @@ class UserSerializer(serializers.ModelSerializer):
             'company_subscription_status', 'has_subsidiaries', 'department', 'service', 'team', 'manager', 'manager_name', 'phone', 'avatar',
             'employee_id', 'job_title', 'hire_date', 'birth_date', 'country', 'bio', 'is_trainer_approved',
             'is_active', 'date_joined', 'last_active_at', 'payout_method', 'bank_account_name', 'bank_iban',
+            'permission_codes',
         )
         read_only_fields = ('date_joined', 'last_active_at')
 
     def get_has_subsidiaries(self, obj):
         return obj.company.subsidiaries.exists() if obj.company_id else False
+
+    def get_permission_codes(self, obj):
+        """Codes granted to this user's role, per the Droits & Permissions matrix —
+        drives frontend menu visibility (getVisibleModules) to match what the API
+        will actually let this user do."""
+        if obj.is_superuser or obj.role == Roles.SUPER_ADMIN:
+            return list(PermissionCode.objects.values_list('code', flat=True))
+        return list(RolePermission.objects.filter(role=obj.role).values_list('permission__code', flat=True))
 
 
 class UserCreateSerializer(serializers.ModelSerializer):
@@ -164,7 +174,7 @@ class MFASetupSerializer(serializers.Serializer):
         user.mfa_secret = secret
         user.save(update_fields=['mfa_secret'])
         totp = pyotp.TOTP(secret)
-        return {'secret': secret, 'provisioning_uri': totp.provisioning_uri(name=user.email, issuer_name='LMS PRO')}
+        return {'secret': secret, 'provisioning_uri': totp.provisioning_uri(name=user.email, issuer_name="Managers d'Elites")}
 
 
 class MFACodeSerializer(serializers.Serializer):

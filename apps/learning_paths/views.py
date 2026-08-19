@@ -4,7 +4,7 @@ from rest_framework.response import Response
 
 from apps.core.constants import Roles
 from apps.core.mixins import CompanyScopedViewSetMixin
-from apps.core.permissions import HasRole
+from apps.core.permissions import HasPermCode, HasRole
 from apps.learning_paths.models import LearningPath, LearningPathEnrollment, LearningPathStep, SessionParticipant, TrainingSession
 from apps.learning_paths.serializers import (
     LearningPathEnrollmentSerializer,
@@ -65,7 +65,9 @@ class TrainingSessionViewSet(CompanyScopedViewSetMixin, viewsets.ModelViewSet):
     filterset_fields = ['course', 'path', 'trainer', 'location_type']
 
     def get_permissions(self):
-        if self.action in ('list', 'retrieve', 'register'):
+        if self.action in ('list', 'retrieve'):
+            return [HasPermCode.for_code('session.view')()]
+        if self.action == 'register':
             return [permissions.IsAuthenticated()]
         return [IsHRorManager()]
 
