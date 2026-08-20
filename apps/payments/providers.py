@@ -77,7 +77,7 @@ class CinetPayProvider(BasePaymentProvider):
     CinetPay aggregator, as listed in the cahier des charges §20."""
 
     code = 'cinetpay'
-    BASE_URL = 'https://api-checkout.cinetpay.com/v2'
+    BASE_URL = 'https://api.cinetpay.net/v2'
 
     def init_payment(self, order):
         import logging
