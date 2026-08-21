@@ -13,6 +13,13 @@ class UserSubscriptionSerializer(serializers.ModelSerializer):
     plan_name = serializers.CharField(source='plan.name', read_only=True)
     billing_cycle = serializers.CharField(source='plan.billing_cycle', read_only=True)
     currency = serializers.CharField(source='plan.currency', read_only=True)
+    is_global = serializers.BooleanField(source='plan.is_global', read_only=True)
+    included_course_titles = serializers.SerializerMethodField()
+
+    def get_included_course_titles(self, obj):
+        if obj.plan.is_global:
+            return []
+        return list(obj.plan.included_courses.values_list('title', flat=True))
 
     class Meta:
         model = UserSubscription
@@ -34,6 +41,10 @@ class CompanySerializer(serializers.ModelSerializer):
 
 
 class CompanySubscriptionSerializer(serializers.ModelSerializer):
+    plan_name = serializers.CharField(source='plan.name', read_only=True)
+    billing_cycle = serializers.CharField(source='plan.billing_cycle', read_only=True)
+    is_global = serializers.BooleanField(source='plan.is_global', read_only=True)
+
     class Meta:
         model = CompanySubscription
         fields = '__all__'
