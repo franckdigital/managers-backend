@@ -231,7 +231,7 @@ def _can_access_course_qa(user, course):
     if user.role in (Roles.COMPANY_ADMIN, Roles.HR) and course.company_id and course.company_id == user.company_id:
         return True
     from apps.tenants.services import has_active_b2c_subscription, has_active_team_subscription
-    if has_active_team_subscription(user) or has_active_b2c_subscription(user):
+    if has_active_team_subscription(user, course) or has_active_b2c_subscription(user, course):
         return True
     return Enrollment.objects.filter(user=user, course=course).exists()
 

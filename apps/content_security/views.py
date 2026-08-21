@@ -42,7 +42,7 @@ class SecureStreamTicketView(APIView):
 
         if not lesson.is_preview_free:
             from apps.tenants.services import has_active_b2c_subscription, has_active_team_subscription
-            if has_active_team_subscription(request.user) or has_active_b2c_subscription(request.user):
+            if has_active_team_subscription(request.user, lesson.course) or has_active_b2c_subscription(request.user, lesson.course):
                 Enrollment.objects.get_or_create(user=request.user, course=lesson.course)
             elif not Enrollment.objects.filter(user=request.user, course=lesson.course).exists():
                 return Response({'detail': "Vous n'êtes pas inscrit à cette formation."}, status=403)

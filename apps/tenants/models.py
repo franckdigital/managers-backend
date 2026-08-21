@@ -34,6 +34,15 @@ class SubscriptionPlan(TimeStampedModel):
     features = models.JSONField(default=dict, blank=True)
     is_active = models.BooleanField(default=True)
 
+    is_global = models.BooleanField(
+        default=True,
+        help_text="Si coché, ce plan donne accès à tout le catalogue. Sinon, uniquement aux cours listés dans included_courses.",
+    )
+    included_courses = models.ManyToManyField(
+        'courses.Course', blank=True, related_name='subscription_plans',
+        help_text="Cours débloqués par ce plan quand is_global est désactivé.",
+    )
+
     def __str__(self):
         return self.name
 
