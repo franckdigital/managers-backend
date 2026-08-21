@@ -89,21 +89,21 @@ class CinetPayProvider(BasePaymentProvider):
 
     @staticmethod
     def _normalize_ci_phone(phone):
-        """CinetPay expects a bare 10-digit local number starting with 0 — an
-        8-digit legacy number, one with +225/spaces still in it, etc. gets
-        rejected with "client phone number is not mobile" even though it
-        displays fine everywhere else in the app.
-
-        Only prepends the trunk '0' when the number is exactly 9 digits after
-        stripping the country code (i.e. it's genuinely missing it) — doing
-        this unconditionally turned an already-complete 10-digit number into
-        an invalid 11-digit one."""
+        """CinetPay's v1 "Aurora" API expects client_phone_number in full
+        international format WITH the +225 country code and the local
+        trunk '0' kept (e.g. +2250707070700, per their own notify_url
+        webhook payload example and sandbox test-number docs) — not the
+        bare local number the old v2 API wanted. Sending the stripped local
+        form here got even their own documented SUCCESS test number
+        rejected as "not mobile"."""
         digits = re.sub(r'\D', '', phone or '')
-        if digits.startswith('225') and len(digits) > 10:
-            digits = digits[3:]
-        if len(digits) == 9 and not digits.startswith('0'):
-            digits = '0' + digits
-        return digits
+        if digits.startswith('225'):
+            local = digits[3:]
+        else:
+            local = digits
+        if len(local) == 9 and not local.startswith('0'):
+            local = '0' + local
+        return f'+225{local}'
 
     def _get_access_token(self):
         import requests
@@ -125,7 +125,10 @@ class CinetPayProvider(BasePaymentProvider):
             raise RuntimeError(data.get('description') or data.get('status') or 'Authentification CinetPay échouée')
 
         token = data['access_token']
-        ttl = max(int(data.get('expires_in', 86400)) - 300, 60)
+        # CinetPay's own docs: the token is valid 5 minutes — cache well under
+        # that (refresh 30s early) rather than trusting a possibly-missing/
+        # much-larger `expires_in` and getting EXPIRED_TOKEN mid-cache.
+        ttl = min(max(int(data.get('expires_in', 240)) - 30, 60), 240)
         cache.set(cache_key, token, ttl)
         return token
 
@@ -158,7 +161,7 @@ class CinetPayProvider(BasePaymentProvider):
 
         user = order.user
         client_phone_number = self._normalize_ci_phone(user.phone)
-        if len(client_phone_number) != 10:
+        if len(client_phone_number) != 14:  # '+225' + 10 digits
             raise RuntimeError(
                 "Numéro de téléphone invalide. Vérifiez qu'il contient bien un numéro mobile "
                 "ivoirien à 10 chiffres (ex: 0707123456) dans votre profil."
