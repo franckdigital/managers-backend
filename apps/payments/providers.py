@@ -105,6 +105,18 @@ class CinetPayProvider(BasePaymentProvider):
             local = '0' + local
         return f'+225{local}'
 
+    @staticmethod
+    def _return_path(order):
+        """Where CinetPay's "Retourner sur le site" button sends the learner back
+        to — the checkout/success|cancel routes don't exist in the frontend, so
+        this must land on a real page. Subscription orders go back to the B2C
+        training-center page where the activated plan is visible immediately."""
+        from apps.payments.models import Order
+
+        if order.order_type == Order.TYPE_SUBSCRIPTION:
+            return '/training-center'
+        return '/payments'
+
     def _get_access_token(self):
         import requests
         from django.core.cache import cache
@@ -181,8 +193,8 @@ class CinetPayProvider(BasePaymentProvider):
             'client_first_name': (user.first_name or 'Client')[:255] or 'Client',
             'client_last_name': (user.last_name or 'CinetPay')[:255] or 'CinetPay',
             'direct_pay': False,
-            'success_url': f'{settings.FRONTEND_BASE_URL}/checkout/success',
-            'failed_url': f'{settings.FRONTEND_BASE_URL}/checkout/cancel',
+            'success_url': f'{settings.FRONTEND_BASE_URL}{self._return_path(order)}',
+            'failed_url': f'{settings.FRONTEND_BASE_URL}{self._return_path(order)}',
             'notify_url': notify_url,
         }
 
