@@ -46,6 +46,12 @@ def create_order_from_cart(user, cart, coupon=None):
 
 
 def initiate_payment(order, provider_code):
+    # A zero-amount order (misconfigured 0-price course, 100%-off coupon, ...) has
+    # nothing for a real gateway to charge — CinetPay in particular accepts the
+    # request (code 200) but returns no payment_url, surfacing as a confusing
+    # "Paiement échoué" to the learner. Skip the gateway and unlock immediately.
+    if order.total_amount <= 0:
+        provider_code = 'manual'
     provider = get_provider(provider_code)
     result = provider.init_payment(order)
     payment = Payment.objects.create(
