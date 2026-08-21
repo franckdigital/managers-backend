@@ -16,11 +16,13 @@ class SubscriptionPlan(TimeStampedModel):
     BILLING_QUARTERLY = 'quarterly'
     BILLING_SEMI_ANNUAL = 'semi_annual'
     BILLING_YEARLY = 'yearly'
+    BILLING_LIFETIME = 'lifetime'
     BILLING_CHOICES = [
         (BILLING_MONTHLY, '1 mois'),
         (BILLING_QUARTERLY, '3 mois'),
         (BILLING_SEMI_ANNUAL, '6 mois'),
         (BILLING_YEARLY, '12 mois (1 an)'),
+        (BILLING_LIFETIME, 'À vie'),
     ]
 
     name = models.CharField(max_length=100)

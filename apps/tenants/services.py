@@ -7,6 +7,7 @@ BILLING_DAYS = {
     'quarterly': 90,
     'semi_annual': 180,
     'yearly': 365,
+    'lifetime': 365 * 100,  # no nullable-end_date migration needed — 100 years reads as permanent
 }
 
 
