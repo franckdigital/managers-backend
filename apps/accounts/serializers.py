@@ -66,6 +66,9 @@ class RegisterSerializer(serializers.ModelSerializer):
     """Public B2C self-registration — always creates a 'student' with no company."""
 
     password = serializers.CharField(write_only=True, validators=[validate_password])
+    # Required here specifically (unlike the model's blank=True) — B2C subscriptions/
+    # course purchases pay via CinetPay Mobile Money, which needs a phone number.
+    phone = serializers.CharField(required=True, allow_blank=False)
 
     class Meta:
         model = User
