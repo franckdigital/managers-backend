@@ -202,19 +202,28 @@ class CheckoutView(generics.GenericAPIView):
 class CinetPayWebhookView(APIView):
     permission_classes = [AllowAny]
 
+    def get(self, request):
+        # CinetPay probes notify_url with GET as a reachability health-check
+        # before sending real POST notifications — must return 200.
+        return Response(status=status.HTTP_200_OK)
+
     def post(self, request):
-        transaction_id = request.data.get('cpm_trans_id') or request.data.get('transaction_id')
-        if not transaction_id:
+        # Aurora (v1) notify_url payload: {notify_token, merchant_transaction_id,
+        # transaction_id, user}. merchant_transaction_id is OUR reference (what we
+        # stored as Payment.provider_reference) — transaction_id here is CinetPay's
+        # own internal id, and cpm_trans_id was the retired v2 field name.
+        merchant_transaction_id = request.data.get('merchant_transaction_id') or request.data.get('cpm_trans_id')
+        if not merchant_transaction_id:
             return Response(status=status.HTTP_400_BAD_REQUEST)
 
         from apps.payments.models import Payment
 
-        payment = Payment.objects.filter(provider_reference=transaction_id, provider='cinetpay').select_related('order').first()
+        payment = Payment.objects.filter(provider_reference=merchant_transaction_id, provider='cinetpay').select_related('order').first()
         if not payment:
             return Response(status=status.HTTP_404_NOT_FOUND)
 
         provider = get_provider('cinetpay')
-        result = provider.verify_payment(transaction_id)
+        result = provider.verify_payment(merchant_transaction_id)
         payment.status = Payment.STATUS_SUCCEEDED if result['status'] == 'succeeded' else Payment.STATUS_FAILED
         payment.raw_response = result.get('raw', {})
         payment.save(update_fields=['status', 'raw_response'])
