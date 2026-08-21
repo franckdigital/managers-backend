@@ -167,6 +167,12 @@ class B2CSubscribeView(APIView):
         except SubscriptionPlan.DoesNotExist:
             return Response({'detail': 'Plan introuvable ou inactif.'}, status=404)
 
+        if provider == 'cinetpay' and not request.user.phone:
+            return Response(
+                {'detail': 'Veuillez renseigner votre numéro de téléphone dans votre profil avant de payer par Mobile Money.'},
+                status=400,
+            )
+
         from apps.payments.services import create_subscription_order, initiate_payment, mark_order_paid
         from apps.payments.serializers import OrderSerializer
 
