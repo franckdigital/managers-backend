@@ -89,14 +89,19 @@ class CinetPayProvider(BasePaymentProvider):
 
     @staticmethod
     def _normalize_ci_phone(phone):
-        """CinetPay expects a bare local number starting with 0 — an 8-digit
-        legacy number, one with +225/spaces still in it, etc. gets rejected
-        with "client phone number is not mobile" even though it displays
-        fine everywhere else in the app."""
+        """CinetPay expects a bare 10-digit local number starting with 0 — an
+        8-digit legacy number, one with +225/spaces still in it, etc. gets
+        rejected with "client phone number is not mobile" even though it
+        displays fine everywhere else in the app.
+
+        Only prepends the trunk '0' when the number is exactly 9 digits after
+        stripping the country code (i.e. it's genuinely missing it) — doing
+        this unconditionally turned an already-complete 10-digit number into
+        an invalid 11-digit one."""
         digits = re.sub(r'\D', '', phone or '')
         if digits.startswith('225') and len(digits) > 10:
             digits = digits[3:]
-        if digits and not digits.startswith('0'):
+        if len(digits) == 9 and not digits.startswith('0'):
             digits = '0' + digits
         return digits
 
@@ -152,6 +157,13 @@ class CinetPayProvider(BasePaymentProvider):
             raise RuntimeError(f'CinetPay: erreur réseau — {exc}')
 
         user = order.user
+        client_phone_number = self._normalize_ci_phone(user.phone)
+        if len(client_phone_number) != 10:
+            raise RuntimeError(
+                "Numéro de téléphone invalide. Vérifiez qu'il contient bien un numéro mobile "
+                "ivoirien à 10 chiffres (ex: 0707123456) dans votre profil."
+            )
+
         notify_url = f'{settings.BACKEND_BASE_URL}{reverse("cinetpay-webhook")}'
         payload = {
             'currency': order.currency,
@@ -160,7 +172,7 @@ class CinetPayProvider(BasePaymentProvider):
             'lang': 'fr',
             'designation': f"Abonnement Managers d'Elites #{order.id}",
             'client_email': user.email,
-            'client_phone_number': self._normalize_ci_phone(user.phone),
+            'client_phone_number': client_phone_number,
             # CinetPay requires 2-255 chars for both — fall back to placeholders
             # rather than sending an empty/1-char name that gets rejected outright.
             'client_first_name': (user.first_name or 'Client')[:255] or 'Client',
