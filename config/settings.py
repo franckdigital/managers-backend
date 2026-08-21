@@ -229,6 +229,7 @@ ANTHROPIC_API_KEY = config('ANTHROPIC_API_KEY', default='')
 LMSPRO_PAYMENT_PROVIDERS = {
     'STRIPE_SECRET_KEY': config('STRIPE_SECRET_KEY', default=''),
     'CINETPAY_API_KEY': config('CINETPAY_API_KEY', default=''),
+    'CINETPAY_API_PASSWORD': config('CINETPAY_API_PASSWORD', default=''),
     'CINETPAY_SITE_ID': config('CINETPAY_SITE_ID', default=''),
     'PAYPAL_CLIENT_ID': config('PAYPAL_CLIENT_ID', default=''),
     'PAYPAL_CLIENT_SECRET': config('PAYPAL_CLIENT_SECRET', default=''),

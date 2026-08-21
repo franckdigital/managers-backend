@@ -1,3 +1,5 @@
+import re
+
 from django.conf import settings
 from django.urls import reverse
 
@@ -74,10 +76,53 @@ class StripeProvider(BasePaymentProvider):
 
 class CinetPayProvider(BasePaymentProvider):
     """Covers card payments + West-African mobile money (Orange/MTN/Moov/Wave) via the
-    CinetPay aggregator, as listed in the cahier des charges §20."""
+    CinetPay aggregator, as listed in the cahier des charges §20.
+
+    Uses CinetPay's v1 ("Aurora") API: POST /v1/oauth/login with
+    {api_key, api_password} returns a bearer access_token (~24h TTL, cached),
+    then every other call carries `Authorization: Bearer <token>`. The older
+    v2 apikey/site_id-in-body flow (api-checkout.cinetpay.com) is retired —
+    hitting it now 404s with "EndPoint does not exist"."""
 
     code = 'cinetpay'
-    BASE_URL = 'https://api.cinetpay.net/v2'
+    BASE_URL = 'https://api.cinetpay.net'
+
+    @staticmethod
+    def _normalize_ci_phone(phone):
+        """CinetPay expects a bare local number starting with 0 — an 8-digit
+        legacy number, one with +225/spaces still in it, etc. gets rejected
+        with "client phone number is not mobile" even though it displays
+        fine everywhere else in the app."""
+        digits = re.sub(r'\D', '', phone or '')
+        if digits.startswith('225') and len(digits) > 10:
+            digits = digits[3:]
+        if digits and not digits.startswith('0'):
+            digits = '0' + digits
+        return digits
+
+    def _get_access_token(self):
+        import requests
+        from django.core.cache import cache
+
+        config = settings.LMSPRO_PAYMENT_PROVIDERS
+        cache_key = 'cinetpay_access_token'
+        token = cache.get(cache_key)
+        if token:
+            return token
+
+        response = requests.post(
+            f'{self.BASE_URL}/v1/oauth/login',
+            json={'api_key': config['CINETPAY_API_KEY'], 'api_password': config['CINETPAY_API_PASSWORD']},
+            timeout=30,
+        )
+        data = response.json()
+        if data.get('code') != 200 or not data.get('access_token'):
+            raise RuntimeError(data.get('description') or data.get('status') or 'Authentification CinetPay échouée')
+
+        token = data['access_token']
+        ttl = max(int(data.get('expires_in', 86400)) - 300, 60)
+        cache.set(cache_key, token, ttl)
+        return token
 
     def init_payment(self, order):
         import logging
@@ -86,8 +131,8 @@ class CinetPayProvider(BasePaymentProvider):
 
         logger = logging.getLogger(__name__)
         config = settings.LMSPRO_PAYMENT_PROVIDERS
-        if not config['CINETPAY_API_KEY']:
-            raise RuntimeError('CINETPAY_API_KEY non configurée')
+        if not config['CINETPAY_API_KEY'] or not config['CINETPAY_API_PASSWORD']:
+            raise RuntimeError('CINETPAY_API_KEY / CINETPAY_API_PASSWORD non configurées')
 
         transaction_id = f'LMS-{uuid.uuid4().hex[:10].upper()}'
 
@@ -101,25 +146,36 @@ class CinetPayProvider(BasePaymentProvider):
                 raw={'mock': True, 'transaction_id': transaction_id},
             )
 
-        customer_name = order.user.get_full_name() or order.user.email
+        try:
+            token = self._get_access_token()
+        except requests.exceptions.RequestException as exc:
+            raise RuntimeError(f'CinetPay: erreur réseau — {exc}')
+
+        user = order.user
         notify_url = f'{settings.BACKEND_BASE_URL}{reverse("cinetpay-webhook")}'
         payload = {
-            'apikey': config['CINETPAY_API_KEY'],
-            'site_id': config['CINETPAY_SITE_ID'],
-            'transaction_id': transaction_id,
-            'amount': float(order.total_amount),
             'currency': order.currency,
-            'description': f'Abonnement LMS PRO #{order.id}',
-            'customer_name': customer_name,
-            'customer_email': order.user.email,
+            'merchant_transaction_id': transaction_id,
+            'amount': int(order.total_amount),
+            'lang': 'fr',
+            'designation': f"Abonnement Managers d'Elites #{order.id}",
+            'client_email': user.email,
+            'client_phone_number': self._normalize_ci_phone(user.phone),
+            # CinetPay requires 2-255 chars for both — fall back to placeholders
+            # rather than sending an empty/1-char name that gets rejected outright.
+            'client_first_name': (user.first_name or 'Client')[:255] or 'Client',
+            'client_last_name': (user.last_name or 'CinetPay')[:255] or 'CinetPay',
+            'direct_pay': False,
+            'success_url': f'{settings.FRONTEND_BASE_URL}/checkout/success',
+            'failed_url': f'{settings.FRONTEND_BASE_URL}/checkout/cancel',
             'notify_url': notify_url,
-            'return_url': f'{settings.FRONTEND_BASE_URL}/checkout/success',
-            'channels': 'ALL',
-            'metadata': transaction_id,
         }
 
         try:
-            response = requests.post(f'{self.BASE_URL}/payment', json=payload, timeout=30)
+            response = requests.post(
+                f'{self.BASE_URL}/v1/payment', json=payload,
+                headers={'Authorization': f'Bearer {token}'}, timeout=30,
+            )
             raw_text = response.text
             logger.info('CinetPay HTTP %s — %.500s', response.status_code, raw_text)
             if not raw_text:
@@ -132,29 +188,38 @@ class CinetPayProvider(BasePaymentProvider):
         except ValueError:
             raise RuntimeError('CinetPay: réponse invalide (non-JSON)')
 
-        if str(data.get('code', '')) != '201':
-            msg = data.get('message') or data.get('description') or 'Erreur CinetPay'
+        if data.get('code') != 200 or not data.get('payment_url'):
+            # v1 "Aurora" wraps the REAL outcome in details — the top-level
+            # code/status only mean "the request was well formed", not
+            # "the payment succeeded". details.errors (field -> reason,
+            # e.g. client_phone_number) is the actual cause.
+            details = data.get('details') or {}
+            errors = details.get('errors')
+            if errors:
+                msg = '; '.join(f'{k}: {v}' for k, v in errors.items())
+            else:
+                msg = details.get('message') or data.get('description') or data.get('message') or 'Erreur CinetPay'
             raise RuntimeError(f'CinetPay: {msg} (code={data.get("code")})')
 
         return PaymentInitResult(
             provider_reference=transaction_id,
-            redirect_url=data.get('data', {}).get('payment_url'),
+            redirect_url=data.get('payment_url'),
             raw=data,
         )
 
     def verify_payment(self, provider_reference):
+        """GET /v1/payment/{merchant_transaction_id} — status is one of
+        SUCCESS/FAILED/INITIATED/PENDING/INSUFFICIENT_BALANCE."""
         import requests
 
-        config = settings.LMSPRO_PAYMENT_PROVIDERS
-        payload = {
-            'apikey': config['CINETPAY_API_KEY'],
-            'site_id': config['CINETPAY_SITE_ID'],
-            'transaction_id': provider_reference,
-        }
-        response = requests.post(f'{self.BASE_URL}/payment/check', json=payload, timeout=15)
+        token = self._get_access_token()
+        response = requests.get(
+            f'{self.BASE_URL}/v1/payment/{provider_reference}',
+            headers={'Authorization': f'Bearer {token}'}, timeout=15,
+        )
         data = response.json()
-        status = 'succeeded' if data.get('data', {}).get('status') == 'ACCEPTED' else data.get('data', {}).get('status')
-        return {'status': status, 'raw': data}
+        status_value = data.get('status')
+        return {'status': 'succeeded' if status_value == 'SUCCESS' else status_value, 'raw': data}
 
 
 class PayPalProvider(BasePaymentProvider):
