@@ -88,27 +88,25 @@ class CinetPayProvider(BasePaymentProvider):
     SANDBOX_BASE_URL = 'https://api.cinetpay.net'
     LIVE_BASE_URL = 'https://api.cinetpay.co'
 
-    def _is_live(self):
-        return settings.LMSPRO_PAYMENT_PROVIDERS['CINETPAY_API_KEY'].startswith('sk_live_')
-
+    # Confirmed by direct testing: only the DOMAIN differs between sandbox and
+    # live (.net vs .co) — the paths themselves (/v1/oauth/login, /v1/payment,
+    # /v1/payment/{id}) are identical on both. CinetPay support's "just use
+    # /login in production" turned out to be wrong/incomplete — that path
+    # 404s ("EndPoint does not exist") on both /login, /v1/login and /v2/login;
+    # only /v1/oauth/login resolves (confirmed via a real INVALID_CREDENTIALS
+    # response, not a 404, when hit on api.cinetpay.co).
     def _base_url(self):
-        return self.LIVE_BASE_URL if self._is_live() else self.SANDBOX_BASE_URL
+        is_live = settings.LMSPRO_PAYMENT_PROVIDERS['CINETPAY_API_KEY'].startswith('sk_live_')
+        return self.LIVE_BASE_URL if is_live else self.SANDBOX_BASE_URL
 
     def _login_url(self):
-        # Confirmed by CinetPay support: production login is a flat /login on
-        # api.cinetpay.co, not /v1/oauth/login like the sandbox (api.cinetpay.net).
-        return f'{self._base_url()}/login' if self._is_live() else f'{self._base_url()}/v1/oauth/login'
+        return f'{self._base_url()}/v1/oauth/login'
 
     def _payment_url(self):
-        # Inferred from the confirmed login path (.co drops the /v1/ prefix
-        # entirely) — not yet confirmed by CinetPay support for this endpoint
-        # specifically. If this 404s the way /v1/oauth/login did, that's the
-        # signal to go back to support and ask for the exact production path.
-        return f'{self._base_url()}/payment' if self._is_live() else f'{self._base_url()}/v1/payment'
+        return f'{self._base_url()}/v1/payment'
 
     def _payment_status_url(self, provider_reference):
-        base = f'{self._base_url()}/payment' if self._is_live() else f'{self._base_url()}/v1/payment'
-        return f'{base}/{provider_reference}'
+        return f'{self._base_url()}/v1/payment/{provider_reference}'
 
     @staticmethod
     def _normalize_ci_phone(phone):
