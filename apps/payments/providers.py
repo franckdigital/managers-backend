@@ -85,7 +85,30 @@ class CinetPayProvider(BasePaymentProvider):
     hitting it now 404s with "EndPoint does not exist"."""
 
     code = 'cinetpay'
-    BASE_URL = 'https://api.cinetpay.net'
+    SANDBOX_BASE_URL = 'https://api.cinetpay.net'
+    LIVE_BASE_URL = 'https://api.cinetpay.co'
+
+    def _is_live(self):
+        return settings.LMSPRO_PAYMENT_PROVIDERS['CINETPAY_API_KEY'].startswith('sk_live_')
+
+    def _base_url(self):
+        return self.LIVE_BASE_URL if self._is_live() else self.SANDBOX_BASE_URL
+
+    def _login_url(self):
+        # Confirmed by CinetPay support: production login is a flat /login on
+        # api.cinetpay.co, not /v1/oauth/login like the sandbox (api.cinetpay.net).
+        return f'{self._base_url()}/login' if self._is_live() else f'{self._base_url()}/v1/oauth/login'
+
+    def _payment_url(self):
+        # Inferred from the confirmed login path (.co drops the /v1/ prefix
+        # entirely) — not yet confirmed by CinetPay support for this endpoint
+        # specifically. If this 404s the way /v1/oauth/login did, that's the
+        # signal to go back to support and ask for the exact production path.
+        return f'{self._base_url()}/payment' if self._is_live() else f'{self._base_url()}/v1/payment'
+
+    def _payment_status_url(self, provider_reference):
+        base = f'{self._base_url()}/payment' if self._is_live() else f'{self._base_url()}/v1/payment'
+        return f'{base}/{provider_reference}'
 
     @staticmethod
     def _normalize_ci_phone(phone):
@@ -128,7 +151,7 @@ class CinetPayProvider(BasePaymentProvider):
             return token
 
         response = requests.post(
-            f'{self.BASE_URL}/v1/oauth/login',
+            self._login_url(),
             json={'api_key': config['CINETPAY_API_KEY'], 'api_password': config['CINETPAY_API_PASSWORD']},
             timeout=30,
         )
@@ -200,7 +223,7 @@ class CinetPayProvider(BasePaymentProvider):
 
         try:
             response = requests.post(
-                f'{self.BASE_URL}/v1/payment', json=payload,
+                self._payment_url(), json=payload,
                 headers={'Authorization': f'Bearer {token}'}, timeout=30,
             )
             raw_text = response.text
@@ -241,7 +264,7 @@ class CinetPayProvider(BasePaymentProvider):
 
         token = self._get_access_token()
         response = requests.get(
-            f'{self.BASE_URL}/v1/payment/{provider_reference}',
+            self._payment_status_url(provider_reference),
             headers={'Authorization': f'Bearer {token}'}, timeout=15,
         )
         data = response.json()
