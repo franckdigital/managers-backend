@@ -208,6 +208,66 @@ def compute_period(year, month):
     return results
 
 
+def course_engagement_detail(course_id, year, month):
+    """Per-user breakdown of views/clicks for one course/month — the 'traçabilité KPI'
+    behind the aggregate view_count/click_count on PartnerMonthlyEarning: which student
+    or employee generated the engagement, and when they last did."""
+    from apps.courses.models import Lesson
+
+    start, end = _period_bounds(year, month)
+    by_user = {}
+
+    def _touch(user_id, field, ts):
+        row = by_user.setdefault(user_id, {'view_count': 0, 'click_count': 0, 'last_activity': ts})
+        row[field] += 1
+        if ts > row['last_activity']:
+            row['last_activity'] = ts
+
+    view_rows = (
+        XAPIStatement.objects
+        .filter(object_type='course', object_id=str(course_id), result__verb_detail='view',
+                timestamp__range=(start, end))
+        .values_list('user_id', 'timestamp')
+    )
+    for user_id, ts in view_rows:
+        _touch(user_id, 'view_count', ts)
+
+    lesson_ids = list(Lesson.objects.filter(chapter__section__course_id=course_id).values_list('id', flat=True))
+    if lesson_ids:
+        click_rows = (
+            XAPIStatement.objects
+            .filter(object_type='lesson', object_id__in=[str(l) for l in lesson_ids],
+                    result__verb_detail__in=['play', 'resume'], timestamp__range=(start, end))
+            .values_list('user_id', 'timestamp')
+        )
+        for user_id, ts in click_rows:
+            _touch(user_id, 'click_count', ts)
+
+    if not by_user:
+        return []
+
+    from apps.accounts.models import User
+    users = {u.id: u for u in User.objects.filter(id__in=by_user.keys())}
+
+    results = []
+    for user_id, row in by_user.items():
+        user = users.get(user_id)
+        if not user:
+            continue
+        results.append({
+            'user_id': user_id,
+            'user_name': user.get_full_name() or user.email,
+            'user_email': user.email,
+            'user_role': user.role,
+            'view_count': row['view_count'],
+            'click_count': row['click_count'],
+            'last_activity': row['last_activity'],
+        })
+
+    results.sort(key=lambda r: (r['view_count'] + r['click_count']), reverse=True)
+    return results
+
+
 def catalog_period_totals(year, month):
     """Total revenu (direct + bundles + part d'abonnement) de tout le catalogue publié pour
     ce mois, et la part de ce total déjà couverte par des cours liés à un partenaire — sert

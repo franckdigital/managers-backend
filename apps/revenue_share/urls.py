@@ -4,6 +4,7 @@ from rest_framework.routers import DefaultRouter
 from apps.revenue_share.views import (
     CatalogTotalsView,
     ClosePeriodView,
+    CourseEngagementDetailView,
     EligibleRecipientsView,
     MyRevenueShareDashboardView,
     PartnerMonthlyEarningViewSet,
@@ -19,4 +20,5 @@ urlpatterns = [
     path('close-period/', ClosePeriodView.as_view(), name='revenue-share-close-period'),
     path('eligible-recipients/', EligibleRecipientsView.as_view(), name='revenue-share-eligible-recipients'),
     path('catalog-totals/', CatalogTotalsView.as_view(), name='revenue-share-catalog-totals'),
+    path('course-engagement-detail/', CourseEngagementDetailView.as_view(), name='revenue-share-course-engagement-detail'),
 ] + router.urls

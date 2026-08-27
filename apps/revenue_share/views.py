@@ -14,6 +14,7 @@ from apps.revenue_share.services import (
     approve_partner_payout,
     catalog_period_totals,
     compute_period,
+    course_engagement_detail,
     mark_partner_payout_paid,
     partner_unpaid_earnings,
     reject_partner_payout,
@@ -115,6 +116,18 @@ class CatalogTotalsView(APIView):
         if not year or not month:
             return Response({'detail': 'year et month requis.'}, status=400)
         return Response(catalog_period_totals(int(year), int(month)))
+
+
+class CourseEngagementDetailView(APIView):
+    permission_classes = [IsAdminOverseer]
+
+    def get(self, request):
+        course_id = request.query_params.get('course')
+        year = request.query_params.get('year')
+        month = request.query_params.get('month')
+        if not course_id or not year or not month:
+            return Response({'detail': 'course, year et month requis.'}, status=400)
+        return Response(course_engagement_detail(int(course_id), int(year), int(month)))
 
 
 class EligibleRecipientsView(APIView):
