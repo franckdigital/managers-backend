@@ -35,6 +35,17 @@ class Course(TimeStampedModel):
     category = models.ForeignKey('catalog.Category', on_delete=models.SET_NULL, null=True, related_name='courses')
     instructor = models.ForeignKey('accounts.User', on_delete=models.SET_NULL, null=True, related_name='courses_taught')
 
+    # Bénéficiaire du partage de revenus (admin auteur OU partenaire vidéo externe) —
+    # volontairement distinct de `instructor`, qui reste le rôle pédagogique/formateur.
+    # Voir apps.revenue_share pour le calcul mensuel des gains.
+    revenue_partner = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True, related_name='courses_revenue_share',
+    )
+    revenue_share_rate = models.DecimalField(
+        max_digits=5, decimal_places=2, null=True, blank=True,
+        help_text="Pourcentage du revenu global du cours reversé à revenue_partner (ex: 30.00 ou 40.00)",
+    )
+
     title = models.CharField(max_length=255)
     slug = models.SlugField(max_length=255, unique=True, blank=True)
     subtitle = models.CharField(max_length=255, blank=True)

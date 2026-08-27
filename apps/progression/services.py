@@ -80,10 +80,16 @@ def record_lesson_event(user, lesson, verb, position_seconds=None, time_spent_de
 
 
 def record_course_view(user, course):
-    """Incrémente atomiquement le compteur d'ouvertures de la page cours pour cet utilisateur."""
+    """Incrémente atomiquement le compteur d'ouvertures de la page cours pour cet utilisateur,
+    et écrit un XAPIStatement horodaté ('vue') — ce statement, croisé avec les 'play'/'resume'
+    déjà écrits par record_lesson_event(), est la source de vérité pour le calcul mensuel du
+    partage de revenus partenaires (apps.revenue_share) : impossible de reconstituer un
+    découpage par mois à partir du seul compteur cumulatif open_count."""
     obj, created = CourseView.objects.get_or_create(user=user, course=course)
     if not created:
         CourseView.objects.filter(pk=obj.pk).update(open_count=F('open_count') + 1)
+    record_xapi_statement(user, 'experienced', 'course', course.id, object_name=course.title,
+                           result={'verb_detail': 'view'})
 
 
 def get_progression_settings(course):

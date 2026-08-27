@@ -39,10 +39,15 @@ class User(AbstractUser):
         max_length=20,
         choices=[('bank_transfer', 'Virement bancaire'), ('mobile_money', 'Mobile Money')],
         blank=True,
-        help_text='Formateurs uniquement — méthode de versement des revenus',
+        help_text='Formateurs/partenaires — méthode de versement des revenus',
     )
     bank_account_name = models.CharField(max_length=150, blank=True)
     bank_iban = models.CharField(max_length=50, blank=True)
+    partner_default_rate = models.DecimalField(
+        max_digits=5, decimal_places=2, null=True, blank=True,
+        help_text="Partenaires vidéo — taux de partage de revenus par défaut (ex: 30 ou 40), "
+                   "pré-rempli lors de la liaison à un cours mais modifiable par cours.",
+    )
     is_premium = models.BooleanField(default=False, help_text='§25.3 — profil Premium B2C, utilisé pour restreindre certains téléchargements')
     mfa_enabled = models.BooleanField(default=False)
     mfa_secret = models.CharField(max_length=64, blank=True)

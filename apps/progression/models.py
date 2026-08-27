@@ -107,3 +107,9 @@ class XAPIStatement(TimeStampedModel):
 
     class Meta:
         ordering = ['-timestamp']
+        indexes = [
+            # Speeds up apps.revenue_share's monthly view/click aggregation, which always
+            # filters by object_type (+ optionally object_id) and a timestamp range.
+            models.Index(fields=['object_type', 'timestamp'], name='prog_xapi_type_ts_idx'),
+            models.Index(fields=['object_type', 'object_id', 'timestamp'], name='prog_xapi_type_obj_ts_idx'),
+        ]

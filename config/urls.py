@@ -30,6 +30,7 @@ urlpatterns = [
     path('api/progression/', include('apps.progression.urls')),
     path('api/content-security/', include('apps.content_security.urls')),
     path('api/notifications/', include('apps.notifications.urls')),
+    path('api/revenue-share/', include('apps.revenue_share.urls')),
 ]
 
 if settings.DEBUG:

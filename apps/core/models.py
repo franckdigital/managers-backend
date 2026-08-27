@@ -60,6 +60,11 @@ class PlatformSettings(models.Model):
     )
     b2c_signup_enabled = models.BooleanField(default=True)
     featured_course_ids = models.JSONField(default=list, blank=True)
+    revenue_share_launch_date = models.DateField(
+        null=True, blank=True,
+        help_text="Premier mois éligible au partage de revenus partenaires — aucune donnée "
+                   "de vues horodatée n'existe avant cette date, la clôture d'un mois antérieur est refusée.",
+    )
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

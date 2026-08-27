@@ -161,6 +161,7 @@ class CourseDetailSerializer(serializers.ModelSerializer):
     lesson_reviews = serializers.SerializerMethodField()
     instructor_name = serializers.CharField(source='instructor.get_full_name', read_only=True)
     category_name = serializers.CharField(source='category.name', read_only=True)
+    revenue_partner_name = serializers.CharField(source='revenue_partner.get_full_name', read_only=True, default=None)
 
     class Meta:
         model = Course
