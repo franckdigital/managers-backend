@@ -24,5 +24,6 @@ class Roles:
     B2B_ROLES  = {COMPANY_ADMIN, TRAINING_CENTER_ADMIN, HR, MANAGER, EMPLOYEE, TRAINER}
     STAFF_ROLES = {SUPER_ADMIN, COMPANY_ADMIN, TRAINING_CENTER_ADMIN, HR, MANAGER, TRAINER}
     # Rôles éligibles comme bénéficiaire du partage de revenus d'un cours vidéo
-    # (« l'auteur (admin) ou le partenaire ») — utilisé par le sélecteur de l'éditeur de cours.
-    REVENUE_SHARE_ELIGIBLE_ROLES = {SUPER_ADMIN, COMPANY_ADMIN, TRAINING_CENTER_ADMIN, TRAINER, PARTNER}
+    # (« l'auteur (admin) ou le partenaire », à l'exclusion du Formateur) — utilisé par le
+    # sélecteur de l'éditeur de cours.
+    REVENUE_SHARE_ELIGIBLE_ROLES = {SUPER_ADMIN, COMPANY_ADMIN, TRAINING_CENTER_ADMIN, PARTNER}
