@@ -38,6 +38,34 @@ def _can_manage_subscription_for(user, company_id):
     return company_id in _company_tree_ids(user)
 
 
+def _start_subscription_payment(user, order, provider):
+    """Kick off payment for a subscription order (company/site or team), mirroring
+    B2CSubscribeView's error handling. Returns (result, error_response); on any
+    failure the pending order is deleted and error_response is a DRF Response."""
+    from apps.payments.services import initiate_payment, mark_order_paid
+
+    if provider == 'cinetpay' and not getattr(user, 'phone', ''):
+        order.delete()
+        return None, Response(
+            {'detail': "Renseignez un numéro de téléphone mobile dans votre profil avant de payer par Mobile Money."},
+            status=400,
+        )
+
+    try:
+        _, result = initiate_payment(order, provider)
+    except Exception as exc:  # noqa: BLE001 — surface the gateway message to the caller
+        import logging
+        logging.getLogger(__name__).error('Subscription payment error [%s]: %s', provider, exc, exc_info=True)
+        order.delete()
+        return None, Response({'detail': str(exc)}, status=400)
+
+    if provider == 'manual':
+        mark_order_paid(order)
+        order.refresh_from_db()
+
+    return result, None
+
+
 class SubscriptionPlanViewSet(AuditLogMixin, viewsets.ModelViewSet):
     queryset = SubscriptionPlan.objects.all()
     serializer_class = SubscriptionPlanSerializer
@@ -85,8 +113,9 @@ class CompanyViewSet(AuditLogMixin, viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def subscribe(self, request, pk=None):
-        """Company admin initiates a subscription payment; super admin can use provider='manual'."""
-        from apps.payments.services import create_subscription_order, initiate_payment, mark_order_paid
+        """Company/site subscription payment. Allowed for super admin and for an
+        admin/HR of the company (or a parent company). provider: cinetpay | cash | manual."""
+        from apps.payments.services import create_subscription_order
         from apps.payments.serializers import OrderSerializer
 
         company = self.get_object()
@@ -105,11 +134,9 @@ class CompanyViewSet(AuditLogMixin, viewsets.ModelViewSet):
             return Response({'detail': 'Plan introuvable ou inactif.'}, status=404)
 
         order = create_subscription_order(user, company, plan)
-        payment, result = initiate_payment(order, provider)
-
-        if provider == 'manual':
-            mark_order_paid(order)
-            order.refresh_from_db()
+        result, error = _start_subscription_payment(user, order, provider)
+        if error is not None:
+            return error
 
         return Response({
             'order': OrderSerializer(order).data,
@@ -249,8 +276,9 @@ class TeamViewSet(CompanyScopedViewSetMixin, viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def subscribe(self, request, pk=None):
-        """Admin/HR initiates a subscription payment for a single team."""
-        from apps.payments.services import create_subscription_order, initiate_payment, mark_order_paid
+        """Admin/HR initiates a subscription payment for a single team.
+        provider: cinetpay | cash | manual."""
+        from apps.payments.services import create_subscription_order
         from apps.payments.serializers import OrderSerializer
 
         team = self.get_object()
@@ -268,11 +296,9 @@ class TeamViewSet(CompanyScopedViewSetMixin, viewsets.ModelViewSet):
             return Response({'detail': 'Plan introuvable ou inactif.'}, status=404)
 
         order = create_subscription_order(request.user, None, plan, team=team)
-        payment, result = initiate_payment(order, provider)
-
-        if provider == 'manual':
-            mark_order_paid(order)
-            order.refresh_from_db()
+        result, error = _start_subscription_payment(request.user, order, provider)
+        if error is not None:
+            return error
 
         return Response({
             'order': OrderSerializer(order).data,
