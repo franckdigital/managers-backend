@@ -45,7 +45,12 @@ IsContentManager = HasRole.for_roles(Roles.TRAINER, Roles.COMPANY_ADMIN, Roles.T
 
 
 class CourseViewSet(AuditLogMixin, viewsets.ModelViewSet):
-    queryset = Course.objects.select_related('category', 'instructor', 'company').all()
+    queryset = (
+        Course.objects
+        .select_related('category', 'instructor', 'company')
+        .prefetch_related('subscription_plans')
+        .all()
+    )
     filterset_fields = ['category', 'level', 'status', 'is_free', 'company']
     search_fields = ['title', 'subtitle', 'description']
 
@@ -53,6 +58,17 @@ class CourseViewSet(AuditLogMixin, viewsets.ModelViewSet):
         if self.action in ('list',):
             return CourseListSerializer
         return CourseDetailSerializer
+
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        if self.action in ('list', 'retrieve'):
+            from apps.tenants.models import SubscriptionPlan
+            ctx['b2c_global_plans'] = list(
+                SubscriptionPlan.objects.filter(
+                    is_active=True, plan_type=SubscriptionPlan.PLAN_TYPE_B2C, is_global=True,
+                ).order_by('price')
+            )
+        return ctx
 
     def get_permissions(self):
         if self.action in ('list', 'retrieve'):

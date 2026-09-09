@@ -16,6 +16,42 @@ from apps.courses.models import (
 )
 
 
+def course_access_plans(course, context):
+    """B2C subscription plans that unlock `course`: every active global B2C plan, plus
+    any scoped B2C plan whose included_courses contains it. The global list is cached on
+    the serializer context (`b2c_global_plans`) so list views run a single query for it;
+    scoped plans come from the prefetched `course.subscription_plans` reverse relation."""
+    from apps.tenants.models import SubscriptionPlan
+
+    ctx = context or {}
+    global_plans = ctx.get('b2c_global_plans')
+    if global_plans is None:
+        global_plans = list(
+            SubscriptionPlan.objects.filter(
+                is_active=True, plan_type=SubscriptionPlan.PLAN_TYPE_B2C, is_global=True,
+            ).order_by('price')
+        )
+        if isinstance(context, dict):
+            context['b2c_global_plans'] = global_plans
+
+    scoped = [
+        p for p in course.subscription_plans.all()
+        if p.is_active and not p.is_global and p.plan_type == SubscriptionPlan.PLAN_TYPE_B2C
+    ]
+    plans = sorted({p.id: p for p in [*global_plans, *scoped]}.values(), key=lambda p: p.price)
+    return [
+        {
+            'id': p.id,
+            'name': p.name,
+            'price': str(p.price),
+            'currency': p.currency,
+            'billing_cycle': p.billing_cycle,
+            'is_global': p.is_global,
+        }
+        for p in plans
+    ]
+
+
 class LessonResourceSerializer(serializers.ModelSerializer):
     class Meta:
         model = LessonResource
@@ -142,14 +178,18 @@ class LessonReviewSerializer(serializers.ModelSerializer):
 class CourseListSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source='category.name', read_only=True)
     instructor_name = serializers.CharField(source='instructor.get_full_name', read_only=True)
+    access_plans = serializers.SerializerMethodField()
 
     class Meta:
         model = Course
         fields = (
             'id', 'title', 'slug', 'subtitle', 'thumbnail', 'category', 'category_name', 'instructor',
             'instructor_name', 'level', 'status', 'price', 'is_free', 'is_company_internal', 'average_rating',
-            'total_students', 'total_duration_minutes', 'company',
+            'total_students', 'total_duration_minutes', 'company', 'access_plans',
         )
+
+    def get_access_plans(self, obj):
+        return course_access_plans(obj, self.context)
 
 
 class CourseDetailSerializer(serializers.ModelSerializer):
@@ -162,11 +202,15 @@ class CourseDetailSerializer(serializers.ModelSerializer):
     instructor_name = serializers.CharField(source='instructor.get_full_name', read_only=True)
     category_name = serializers.CharField(source='category.name', read_only=True)
     revenue_partner_name = serializers.CharField(source='revenue_partner.get_full_name', read_only=True, default=None)
+    access_plans = serializers.SerializerMethodField()
 
     class Meta:
         model = Course
         fields = '__all__'
         read_only_fields = ('slug', 'average_rating', 'total_students')
+
+    def get_access_plans(self, obj):
+        return course_access_plans(obj, self.context)
 
     def get_lesson_reviews(self, obj):
         qs = LessonReview.objects.filter(
