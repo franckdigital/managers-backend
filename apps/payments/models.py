@@ -17,11 +17,15 @@ class Order(TimeStampedModel):
 
     TYPE_COURSE_PURCHASE = 'course_purchase'
     TYPE_SUBSCRIPTION = 'subscription'
-    TYPE_CHOICES = [(TYPE_COURSE_PURCHASE, 'Achat de formation'), (TYPE_SUBSCRIPTION, 'Abonnement entreprise')]
+    TYPE_CHOICES = [(TYPE_COURSE_PURCHASE, 'Achat de formation'), (TYPE_SUBSCRIPTION, 'Abonnement')]
 
     user = models.ForeignKey('accounts.User', on_delete=models.CASCADE, related_name='orders')
     company = models.ForeignKey(
         'tenants.Company', on_delete=models.SET_NULL, null=True, blank=True, related_name='orders'
+    )
+    team = models.ForeignKey(
+        'tenants.Team', on_delete=models.SET_NULL, null=True, blank=True, related_name='orders',
+        help_text='Renseigné pour un abonnement souscrit au niveau équipe.',
     )
     subscription_plan = models.ForeignKey(
         'tenants.SubscriptionPlan', on_delete=models.SET_NULL, null=True, blank=True, related_name='orders'

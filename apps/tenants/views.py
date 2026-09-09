@@ -5,8 +5,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.core.mixins import AuditLogMixin, CompanyScopedViewSetMixin
-from apps.core.permissions import IsCompanyAdmin, IsSuperAdmin
-from apps.tenants.models import Company, CompanySubscription, Department, Service, SubscriptionPlan, Team, UserSubscription
+from apps.core.permissions import IsCompanyAdmin, IsHR, IsSuperAdmin
+from apps.tenants.models import (
+    Company, CompanySubscription, Department, Service, SubscriptionPlan,
+    Team, TeamSubscription, UserSubscription,
+)
 from apps.tenants.serializers import (
     CompanySerializer,
     CompanySubscriptionSerializer,
@@ -14,8 +17,25 @@ from apps.tenants.serializers import (
     ServiceSerializer,
     SubscriptionPlanSerializer,
     TeamSerializer,
+    TeamSubscriptionSerializer,
     UserSubscriptionSerializer,
 )
+
+
+def _company_tree_ids(user):
+    """Ids of the user's company plus all its subsidiaries (empty if no company)."""
+    company = getattr(user, 'company', None)
+    return company.get_descendant_ids() if company is not None else set()
+
+
+def _can_manage_subscription_for(user, company_id):
+    """True when the user may pay/manage a subscription for the given company id:
+    super admin, or an admin/HR whose own company owns that company (directly or via a parent)."""
+    if user.is_superuser or user.role == 'super_admin':
+        return True
+    if user.role not in ('company_admin', 'training_center_admin', 'hr'):
+        return False
+    return company_id in _company_tree_ids(user)
 
 
 class SubscriptionPlanViewSet(AuditLogMixin, viewsets.ModelViewSet):
@@ -71,8 +91,7 @@ class CompanyViewSet(AuditLogMixin, viewsets.ModelViewSet):
 
         company = self.get_object()
         user = request.user
-        if not (user.is_superuser or user.role == 'super_admin' or
-                (user.role == 'company_admin' and user.company_id == company.id)):
+        if not _can_manage_subscription_for(user, company.id):
             return Response({'detail': 'Accès refusé.'}, status=403)
 
         plan_id = request.data.get('plan')
@@ -217,7 +236,75 @@ class ServiceViewSet(CompanyScopedViewSetMixin, viewsets.ModelViewSet):
 
 
 class TeamViewSet(CompanyScopedViewSetMixin, viewsets.ModelViewSet):
-    queryset = Team.objects.select_related('service', 'manager').all()
+    queryset = Team.objects.select_related('service', 'manager', 'plan', 'company').all()
     serializer_class = TeamSerializer
     permission_classes = [IsCompanyAdmin]
-    filterset_fields = ['service', 'manager']
+    filterset_fields = ['service', 'manager', 'subscription_status']
+
+    def get_permissions(self):
+        # HR (DRH) may browse teams and subscribe them, but not create/rename/delete them.
+        if self.action in ('list', 'retrieve', 'subscribe', 'activate_subscription'):
+            return [IsHR()]
+        return super().get_permissions()
+
+    @action(detail=True, methods=['post'])
+    def subscribe(self, request, pk=None):
+        """Admin/HR initiates a subscription payment for a single team."""
+        from apps.payments.services import create_subscription_order, initiate_payment, mark_order_paid
+        from apps.payments.serializers import OrderSerializer
+
+        team = self.get_object()
+        if not _can_manage_subscription_for(request.user, team.company_id):
+            return Response({'detail': 'Accès refusé.'}, status=403)
+
+        plan_id = request.data.get('plan')
+        provider = request.data.get('provider', 'cinetpay')
+        if not plan_id:
+            return Response({'detail': 'plan requis.'}, status=400)
+
+        try:
+            plan = SubscriptionPlan.objects.get(pk=plan_id, is_active=True)
+        except SubscriptionPlan.DoesNotExist:
+            return Response({'detail': 'Plan introuvable ou inactif.'}, status=404)
+
+        order = create_subscription_order(request.user, None, plan, team=team)
+        payment, result = initiate_payment(order, provider)
+
+        if provider == 'manual':
+            mark_order_paid(order)
+            order.refresh_from_db()
+
+        return Response({
+            'order': OrderSerializer(order).data,
+            'redirect_url': result.redirect_url,
+        }, status=201)
+
+    @action(detail=True, methods=['post'], url_path='activate-subscription')
+    def activate_subscription(self, request, pk=None):
+        """Super admin manually activates a team subscription without going through payment."""
+        from apps.tenants.services import activate_team_subscription
+
+        if not (request.user.is_superuser or request.user.role == 'super_admin'):
+            return Response({'detail': 'Réservé au super admin.'}, status=403)
+
+        team = self.get_object()
+        plan_id = request.data.get('plan')
+        end_date = request.data.get('end_date') or None
+        if not plan_id:
+            return Response({'detail': 'plan requis.'}, status=400)
+
+        try:
+            plan = SubscriptionPlan.objects.get(pk=plan_id, is_active=True)
+        except SubscriptionPlan.DoesNotExist:
+            return Response({'detail': 'Plan introuvable ou inactif.'}, status=404)
+
+        activate_team_subscription(team, plan, end_date=end_date)
+        team.refresh_from_db()
+        return Response(TeamSerializer(team, context={'request': request}).data)
+
+
+class TeamSubscriptionViewSet(AuditLogMixin, viewsets.ReadOnlyModelViewSet):
+    queryset = TeamSubscription.objects.select_related('team', 'plan').all()
+    serializer_class = TeamSubscriptionSerializer
+    permission_classes = [IsSuperAdmin]
+    filterset_fields = ['team', 'status']

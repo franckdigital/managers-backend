@@ -162,8 +162,43 @@ class Team(TimeStampedModel):
         'accounts.User', on_delete=models.SET_NULL, null=True, blank=True, related_name='managed_teams'
     )
 
+    # Abonnement au niveau équipe — le DRH/admin peut souscrire pour une seule équipe,
+    # en plus (ou à la place) de l'abonnement entreprise/site. Champs dénormalisés
+    # calqués sur Company pour un contrôle d'accès sans jointure supplémentaire.
+    plan = models.ForeignKey(
+        SubscriptionPlan, on_delete=models.SET_NULL, null=True, blank=True, related_name='teams'
+    )
+    subscription_status = models.CharField(
+        max_length=20, choices=Company.STATUS_CHOICES, default=Company.STATUS_TRIAL
+    )
+    subscription_start = models.DateField(null=True, blank=True)
+    subscription_end = models.DateField(null=True, blank=True)
+
     def __str__(self):
         return self.name
+
+
+class TeamSubscription(TimeStampedModel):
+    """History of subscription changes for a single team (renewals, upgrades, downgrades)."""
+
+    STATUS_ACTIVE = 'active'
+    STATUS_EXPIRED = 'expired'
+    STATUS_CANCELLED = 'cancelled'
+    STATUS_CHOICES = [(STATUS_ACTIVE, 'Active'), (STATUS_EXPIRED, 'Expirée'), (STATUS_CANCELLED, 'Annulée')]
+
+    team = models.ForeignKey(Team, on_delete=models.CASCADE, related_name='subscriptions')
+    plan = models.ForeignKey(SubscriptionPlan, on_delete=models.PROTECT, related_name='team_subscriptions')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_ACTIVE)
+    start_date = models.DateField()
+    end_date = models.DateField()
+    auto_renew = models.BooleanField(default=True)
+    amount_paid = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+
+    class Meta:
+        ordering = ['-start_date']
+
+    def __str__(self):
+        return f'{self.team} – {self.plan} ({self.status})'
 
 
 class UserSubscription(TimeStampedModel):

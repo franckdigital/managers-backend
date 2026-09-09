@@ -50,11 +50,13 @@ class OrderSerializer(serializers.ModelSerializer):
     user_name = serializers.CharField(source='user.get_full_name', read_only=True)
     user_email = serializers.EmailField(source='user.email', read_only=True)
     subscription_plan_name = serializers.CharField(source='subscription_plan.name', read_only=True)
+    company_name = serializers.CharField(source='company.name', read_only=True)
+    team_name = serializers.CharField(source='team.name', read_only=True)
 
     class Meta:
         model = Order
         fields = '__all__'
-        read_only_fields = ('user', 'company', 'status', 'subtotal', 'discount_amount', 'total_amount', 'paid_at')
+        read_only_fields = ('user', 'company', 'team', 'status', 'subtotal', 'discount_amount', 'total_amount', 'paid_at')
 
 
 class CheckoutSerializer(serializers.Serializer):

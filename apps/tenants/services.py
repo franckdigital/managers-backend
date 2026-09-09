@@ -24,18 +24,33 @@ def _plan_covers_course(plan, course):
 
 
 def has_active_team_subscription(user, course=None):
-    """True when the user belongs to a company with an active subscription covering
-    today — and, if `course` is given, whose plan actually covers that course
-    (global plans cover everything, scoped plans only their included_courses)."""
-    if not user.company_id:
-        return False
-    company = user.company
-    if company.subscription_status != 'active':
-        return False
+    """True when the user is covered by an active subscription for `course` at ANY
+    of three levels: their own team, their company (i.e. their site), or any parent
+    company up the ownership chain. Global plans cover everything, scoped plans only
+    their included_courses."""
     today = timezone.now().date()
-    if company.subscription_end and company.subscription_end < today:
-        return False
-    return _plan_covers_course(company.plan, course)
+
+    def _sub_ok(status, end, plan):
+        if status != 'active':
+            return False
+        if end is not None and end < today:
+            return False
+        return _plan_covers_course(plan, course)
+
+    # 1. Team-level subscription
+    if user.team_id:
+        team = user.team
+        if _sub_ok(team.subscription_status, team.subscription_end, team.plan):
+            return True
+
+    # 2. The user's own company (their site) then every parent company
+    company = user.company
+    while company is not None:
+        if _sub_ok(company.subscription_status, company.subscription_end, company.plan):
+            return True
+        company = company.parent
+
+    return False
 
 
 def has_active_b2c_subscription(user, course=None):
@@ -82,6 +97,35 @@ def activate_company_subscription(company, plan, start_date=None, end_date=None,
         amount_paid=amount_paid,
     )
     return company
+
+
+def activate_team_subscription(team, plan, start_date=None, end_date=None, amount_paid=0):
+    """Set a single team's subscription to active and record a history entry."""
+    from apps.tenants.models import TeamSubscription
+
+    today = timezone.now().date()
+    start = start_date or today
+
+    if end_date is None:
+        end = _plan_end_date(plan, start)
+    else:
+        end = end_date if isinstance(end_date, date) else date.fromisoformat(str(end_date))
+
+    team.plan = plan
+    team.subscription_status = 'active'
+    team.subscription_start = start
+    team.subscription_end = end
+    team.save(update_fields=['plan', 'subscription_status', 'subscription_start', 'subscription_end'])
+
+    TeamSubscription.objects.create(
+        team=team,
+        plan=plan,
+        status=TeamSubscription.STATUS_ACTIVE,
+        start_date=start,
+        end_date=end,
+        amount_paid=amount_paid,
+    )
+    return team
 
 
 def activate_user_subscription(user, plan, amount_paid=0):

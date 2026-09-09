@@ -1,6 +1,9 @@
 from rest_framework import serializers
 
-from apps.tenants.models import Company, CompanySubscription, Department, Service, SubscriptionPlan, Team, UserSubscription
+from apps.tenants.models import (
+    Company, CompanySubscription, Department, Service, SubscriptionPlan,
+    Team, TeamSubscription, UserSubscription,
+)
 
 
 class SubscriptionPlanSerializer(serializers.ModelSerializer):
@@ -67,7 +70,23 @@ class ServiceSerializer(serializers.ModelSerializer):
 
 
 class TeamSerializer(serializers.ModelSerializer):
+    plan_name = serializers.CharField(source='plan.name', read_only=True)
+    company_name = serializers.CharField(source='company.name', read_only=True)
+    service_name = serializers.CharField(source='service.name', read_only=True)
+    members_count = serializers.IntegerField(source='members.count', read_only=True)
+
     class Meta:
         model = Team
         fields = '__all__'
-        read_only_fields = ('company',)
+        read_only_fields = ('company', 'plan', 'subscription_status', 'subscription_start', 'subscription_end')
+
+
+class TeamSubscriptionSerializer(serializers.ModelSerializer):
+    plan_name = serializers.CharField(source='plan.name', read_only=True)
+    team_name = serializers.CharField(source='team.name', read_only=True)
+    billing_cycle = serializers.CharField(source='plan.billing_cycle', read_only=True)
+    is_global = serializers.BooleanField(source='plan.is_global', read_only=True)
+
+    class Meta:
+        model = TeamSubscription
+        fields = '__all__'

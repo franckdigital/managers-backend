@@ -8,6 +8,7 @@ from apps.tenants.views import (
     DepartmentViewSet,
     ServiceViewSet,
     SubscriptionPlanViewSet,
+    TeamSubscriptionViewSet,
     TeamViewSet,
     UserSubscriptionViewSet,
 )
@@ -16,6 +17,7 @@ router = DefaultRouter()
 router.register('plans', SubscriptionPlanViewSet, basename='subscription-plan')
 router.register('companies', CompanyViewSet, basename='company')
 router.register('subscriptions', CompanySubscriptionViewSet, basename='company-subscription')
+router.register('team-subscriptions', TeamSubscriptionViewSet, basename='team-subscription')
 router.register('user-subscriptions', UserSubscriptionViewSet, basename='user-subscription')
 router.register('departments', DepartmentViewSet, basename='department')
 router.register('services', ServiceViewSet, basename='service')
