@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.core.mixins import AuditLogMixin, CompanyScopedViewSetMixin
-from apps.core.permissions import IsCompanyAdmin, IsHR, IsSuperAdmin
+from apps.core.permissions import IsCompanyAdmin, IsSuperAdmin
 from apps.tenants.models import (
     Company, CompanySubscription, Department, Service, SubscriptionPlan,
     Team, TeamSubscription, UserSubscription,
@@ -30,10 +30,11 @@ def _company_tree_ids(user):
 
 def _can_manage_subscription_for(user, company_id):
     """True when the user may pay/manage a subscription for the given company id:
-    super admin, or an admin/HR whose own company owns that company (directly or via a parent)."""
+    super admin, or a company admin whose own company owns that company (directly or via a
+    parent). The DRH (hr) role is intentionally excluded — activation is admin-only."""
     if user.is_superuser or user.role == 'super_admin':
         return True
-    if user.role not in ('company_admin', 'training_center_admin', 'hr'):
+    if user.role not in ('company_admin', 'training_center_admin'):
         return False
     return company_id in _company_tree_ids(user)
 
@@ -268,15 +269,9 @@ class TeamViewSet(CompanyScopedViewSetMixin, viewsets.ModelViewSet):
     permission_classes = [IsCompanyAdmin]
     filterset_fields = ['service', 'manager', 'subscription_status']
 
-    def get_permissions(self):
-        # HR (DRH) may browse teams and subscribe them, but not create/rename/delete them.
-        if self.action in ('list', 'retrieve', 'subscribe', 'activate_subscription'):
-            return [IsHR()]
-        return super().get_permissions()
-
     @action(detail=True, methods=['post'])
     def subscribe(self, request, pk=None):
-        """Admin/HR initiates a subscription payment for a single team.
+        """Company admin initiates a subscription payment for a single team.
         provider: cinetpay | cash | manual."""
         from apps.payments.services import create_subscription_order
         from apps.payments.serializers import OrderSerializer

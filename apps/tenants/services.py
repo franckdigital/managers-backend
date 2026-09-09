@@ -128,12 +128,18 @@ def activate_team_subscription(team, plan, start_date=None, end_date=None, amoun
     return team
 
 
-def activate_user_subscription(user, plan, amount_paid=0):
-    """Create an individual B2C subscription for a learner."""
+def activate_user_subscription(user, plan, amount_paid=0, end_date=None):
+    """Create an individual B2C subscription for a learner.
+    `end_date` overrides the plan's default duration (used when an admin records a
+    cash payment with an agreed term)."""
     from apps.tenants.models import UserSubscription
 
     today = timezone.now().date()
-    end = _plan_end_date(plan, today)
+    if end_date is None:
+        end = _plan_end_date(plan, today)
+    else:
+        end = end_date if isinstance(end_date, date) else date.fromisoformat(str(end_date))
+
     return UserSubscription.objects.create(
         user=user,
         plan=plan,

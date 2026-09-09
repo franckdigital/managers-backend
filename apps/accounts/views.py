@@ -154,6 +154,9 @@ class UserViewSet(AuditLogMixin, CompanyScopedViewSetMixin, viewsets.ModelViewSe
     def get_permissions(self):
         if self.action in ('suspend', 'activate'):
             return [HasRole.for_roles(Roles.TRAINING_CENTER_ADMIN)()]
+        if self.action == 'grant_subscription':
+            # B2C learners are managed by the training-centre admin (and super admin).
+            return [HasRole.for_roles(Roles.TRAINING_CENTER_ADMIN)()]
         return super().get_permissions()
 
     def get_queryset(self):
@@ -195,6 +198,33 @@ class UserViewSet(AuditLogMixin, CompanyScopedViewSetMixin, viewsets.ModelViewSe
         user.is_active = True
         user.save(update_fields=['is_active'])
         return Response(UserSerializer(user).data)
+
+    @action(detail=True, methods=['post'], url_path='grant-subscription')
+    def grant_subscription(self, request, pk=None):
+        """Admin records a B2C learner's subscription after receiving a cash payment
+        (no online checkout). Reserved to the training-centre admin / super admin."""
+        from apps.tenants.models import SubscriptionPlan
+        from apps.tenants.services import activate_user_subscription
+
+        learner = self.get_object()
+        if learner.company_id:
+            return Response({'detail': "Réservé aux apprenants individuels (B2C)."}, status=400)
+
+        plan_id = request.data.get('plan')
+        end_date = request.data.get('end_date') or None
+        amount_paid = request.data.get('amount_paid') or 0
+        if not plan_id:
+            return Response({'detail': 'plan requis.'}, status=400)
+
+        try:
+            plan = SubscriptionPlan.objects.get(
+                pk=plan_id, plan_type=SubscriptionPlan.PLAN_TYPE_B2C, is_active=True,
+            )
+        except SubscriptionPlan.DoesNotExist:
+            return Response({'detail': 'Plan B2C introuvable ou inactif.'}, status=404)
+
+        activate_user_subscription(learner, plan, amount_paid=amount_paid, end_date=end_date)
+        return Response(UserSerializer(learner).data, status=201)
 
 
 class EmployeeImportBatchViewSet(viewsets.ModelViewSet):

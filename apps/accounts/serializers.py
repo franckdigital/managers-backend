@@ -20,6 +20,7 @@ class UserSerializer(serializers.ModelSerializer):
     manager_name = serializers.CharField(source='manager.get_full_name', read_only=True, default=None)
     has_subsidiaries = serializers.SerializerMethodField()
     permission_codes = serializers.SerializerMethodField()
+    b2c_subscription = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -28,12 +29,29 @@ class UserSerializer(serializers.ModelSerializer):
             'company_subscription_status', 'has_subsidiaries', 'department', 'service', 'team', 'manager', 'manager_name', 'phone', 'avatar',
             'employee_id', 'job_title', 'hire_date', 'birth_date', 'country', 'bio', 'is_trainer_approved',
             'is_active', 'date_joined', 'last_active_at', 'payout_method', 'bank_account_name', 'bank_iban',
-            'permission_codes',
+            'permission_codes', 'b2c_subscription',
         )
         read_only_fields = ('date_joined', 'last_active_at')
 
     def get_has_subsidiaries(self, obj):
         return obj.company.subsidiaries.exists() if obj.company_id else False
+
+    def get_b2c_subscription(self, obj):
+        """Current active individual subscription (B2C learners only) — plan name + end date."""
+        if obj.company_id:
+            return None
+        from django.utils import timezone
+
+        sub = (
+            obj.subscriptions
+            .filter(status='active', end_date__gte=timezone.now().date())
+            .select_related('plan')
+            .order_by('-end_date')
+            .first()
+        )
+        if not sub:
+            return None
+        return {'plan_name': sub.plan.name, 'end_date': sub.end_date}
 
     def get_permission_codes(self, obj):
         """Codes granted to this user's role, per the Droits & Permissions matrix —
