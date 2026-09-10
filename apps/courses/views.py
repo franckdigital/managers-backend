@@ -410,12 +410,14 @@ class EnrollmentViewSet(viewsets.ModelViewSet):
         enrollment = assign_course(
             target_user, course, assigned_by=request.user, due_date=serializer.validated_data.get('due_date')
         )
-        return Response(EnrollmentSerializer(enrollment).data)
+        return Response(EnrollmentSerializer(enrollment, context={'request': request}).data)
 
     @action(detail=False, methods=['get'], url_path='my-learning')
     def my_learning(self, request):
         qs = Enrollment.objects.filter(user=request.user).select_related('course')
-        return Response(EnrollmentSerializer(qs, many=True).data)
+        # context={'request': ...} → ImageField (course_thumbnail) is returned as an
+        # absolute URL, otherwise the thumbnail 404s in the SPA ("Mon apprentissage").
+        return Response(EnrollmentSerializer(qs, many=True, context={'request': request}).data)
 
 
 class TrainingRequestViewSet(viewsets.ModelViewSet):
