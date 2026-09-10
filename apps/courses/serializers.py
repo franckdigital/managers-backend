@@ -17,8 +17,10 @@ from apps.courses.models import (
 
 
 def course_access_plans(course, context):
-    """B2C subscription plans that unlock `course`: every active global B2C plan, plus
-    any scoped B2C plan whose included_courses contains it. The global list is cached on
+    """B2C **lifetime** subscription plans that unlock `course`: every active global
+    lifetime B2C plan, plus any scoped lifetime B2C plan whose included_courses contains
+    it. Recurring plans (monthly / quarterly / …) are intentionally excluded — the B2C
+    offer surfaced on course pages is the "accès à vie" one. The global list is cached on
     the serializer context (`b2c_global_plans`) so list views run a single query for it;
     scoped plans come from the prefetched `course.subscription_plans` reverse relation."""
     from apps.tenants.models import SubscriptionPlan
@@ -28,7 +30,10 @@ def course_access_plans(course, context):
     if global_plans is None:
         global_plans = list(
             SubscriptionPlan.objects.filter(
-                is_active=True, plan_type=SubscriptionPlan.PLAN_TYPE_B2C, is_global=True,
+                is_active=True,
+                plan_type=SubscriptionPlan.PLAN_TYPE_B2C,
+                is_global=True,
+                billing_cycle=SubscriptionPlan.BILLING_LIFETIME,
             ).order_by('price')
         )
         if isinstance(context, dict):
@@ -36,7 +41,9 @@ def course_access_plans(course, context):
 
     scoped = [
         p for p in course.subscription_plans.all()
-        if p.is_active and not p.is_global and p.plan_type == SubscriptionPlan.PLAN_TYPE_B2C
+        if p.is_active and not p.is_global
+        and p.plan_type == SubscriptionPlan.PLAN_TYPE_B2C
+        and p.billing_cycle == SubscriptionPlan.BILLING_LIFETIME
     ]
     plans = sorted({p.id: p for p in [*global_plans, *scoped]}.values(), key=lambda p: p.price)
     return [

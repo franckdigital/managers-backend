@@ -27,7 +27,11 @@ class CourseAccessPlansTests(TestCase):
         )
         cls.inactive = SubscriptionPlan.objects.create(
             name='B2C désactivé', code='b2c-off', plan_type=SubscriptionPlan.PLAN_TYPE_B2C,
-            price=5000, is_global=True, is_active=False,
+            price=5000, billing_cycle='lifetime', is_global=True, is_active=False,
+        )
+        cls.quarterly = SubscriptionPlan.objects.create(
+            name='B2C Trimestriel', code='b2c-quarter', plan_type=SubscriptionPlan.PLAN_TYPE_B2C,
+            price=13500, billing_cycle='quarterly', is_global=True, is_active=True,
         )
 
     def test_lists_global_and_scoped_b2c_plans_for_included_course(self):
@@ -37,10 +41,11 @@ class CourseAccessPlansTests(TestCase):
         # sorted by price ascending
         self.assertEqual([p['name'] for p in plans], ['Pack Management', 'B2C À vie'])
 
-    def test_excludes_enterprise_and_inactive_plans(self):
+    def test_excludes_enterprise_inactive_and_recurring_plans(self):
         names = {p['name'] for p in course_access_plans(self.course, {})}
         self.assertNotIn('Entreprise', names)
         self.assertNotIn('B2C désactivé', names)
+        self.assertNotIn('B2C Trimestriel', names)  # only lifetime plans are surfaced
 
     def test_course_not_in_scoped_plan_only_gets_global(self):
         plans = course_access_plans(self.other, {})

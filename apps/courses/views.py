@@ -65,7 +65,10 @@ class CourseViewSet(AuditLogMixin, viewsets.ModelViewSet):
             from apps.tenants.models import SubscriptionPlan
             ctx['b2c_global_plans'] = list(
                 SubscriptionPlan.objects.filter(
-                    is_active=True, plan_type=SubscriptionPlan.PLAN_TYPE_B2C, is_global=True,
+                    is_active=True,
+                    plan_type=SubscriptionPlan.PLAN_TYPE_B2C,
+                    is_global=True,
+                    billing_cycle=SubscriptionPlan.BILLING_LIFETIME,
                 ).order_by('price')
             )
         return ctx
