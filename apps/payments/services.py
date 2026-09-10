@@ -65,22 +65,21 @@ def initiate_payment(order, provider_code):
     return payment, result
 
 
-def create_subscription_order(user, company, plan, team=None):
+def create_subscription_order(user, company, plan, covered_team_ids=None):
     with transaction.atomic():
         order = Order.objects.create(
             user=user,
             company=company,
-            team=team,
+            covered_team_ids=list(covered_team_ids or []),
             order_type=Order.TYPE_SUBSCRIPTION,
             subtotal=plan.price,
             total_amount=plan.price,
             currency=plan.currency,
             subscription_plan=plan,
         )
-        label = f'Abonnement équipe « {team.name} » — {plan.name}' if team else f'Abonnement {plan.name}'
         OrderItem.objects.create(
             order=order,
-            title_snapshot=label,
+            title_snapshot=f'Abonnement {plan.name}',
             unit_price=plan.price,
         )
     return order
@@ -101,17 +100,14 @@ def mark_order_paid(order):
         order.coupon.save(update_fields=['used_count'])
 
     if order.order_type == Order.TYPE_SUBSCRIPTION and order.subscription_plan_id:
-        order_full = Order.objects.select_related('subscription_plan', 'company', 'team', 'user').get(pk=order.pk)
+        order_full = Order.objects.select_related('subscription_plan', 'company', 'user').get(pk=order.pk)
         if order_full.subscription_plan:
-            if order_full.team_id:
-                from apps.tenants.services import activate_team_subscription
-                activate_team_subscription(
-                    order_full.team, order_full.subscription_plan, amount_paid=order_full.total_amount
-                )
-            elif order_full.company:
+            if order_full.company:
                 from apps.tenants.services import activate_company_subscription
                 activate_company_subscription(
-                    order_full.company, order_full.subscription_plan, amount_paid=order_full.total_amount
+                    order_full.company, order_full.subscription_plan,
+                    amount_paid=order_full.total_amount,
+                    covered_team_ids=order_full.covered_team_ids or None,
                 )
             else:
                 from apps.tenants.services import activate_user_subscription

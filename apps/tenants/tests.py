@@ -170,3 +170,57 @@ class OrgStructureCreationTests(APITestCase):
         )
         self.assertEqual(res.status_code, 400)
         self.assertIn('department', res.data.get('errors', res.data))
+
+
+class TeamAttachmentTests(APITestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.plan = SubscriptionPlan.objects.create(
+            name='Ent', code='ent-att', plan_type=SubscriptionPlan.PLAN_TYPE_ENTERPRISE,
+            price=100000, billing_cycle='yearly', is_active=True, is_global=True,
+        )
+        cls.company = Company.objects.create(name='ACME2')
+        cls.team = Team.objects.create(company=cls.company, name='Support')
+        cls.admin = User.objects.create_user(
+            email='a@acme2.test', password='x', role=Roles.COMPANY_ADMIN, company=cls.company,
+        )
+        cls.super_admin = User.objects.create_user(
+            email='root3@example.com', password='x', role=Roles.SUPER_ADMIN, is_superuser=True,
+        )
+
+    def test_attach_requires_active_company_subscription(self):
+        self.client.force_authenticate(self.admin)
+        res = self.client.post(f'/api/teams/{self.team.id}/attach-subscription/')
+        self.assertEqual(res.status_code, 400)
+
+    def test_attach_mirrors_company_subscription_onto_team(self):
+        from apps.tenants.services import activate_company_subscription
+        activate_company_subscription(self.company, self.plan)
+        self.company.refresh_from_db()
+
+        self.client.force_authenticate(self.admin)
+        res = self.client.post(f'/api/teams/{self.team.id}/attach-subscription/')
+        self.assertEqual(res.status_code, 200, res.data)
+        self.team.refresh_from_db()
+        self.assertEqual(self.team.subscription_status, 'active')
+        self.assertEqual(self.team.plan_id, self.plan.id)
+        self.assertEqual(self.team.subscription_end, self.company.subscription_end)
+
+        # Detach clears the team record (company-wide access unaffected)
+        res = self.client.post(f'/api/teams/{self.team.id}/detach-subscription/')
+        self.assertEqual(res.status_code, 200)
+        self.team.refresh_from_db()
+        self.assertIsNone(self.team.plan_id)
+        self.assertEqual(self.team.subscription_status, 'trial')
+
+    def test_activate_company_subscription_with_covered_team_ids(self):
+        from apps.tenants.services import activate_company_subscription
+        activate_company_subscription(self.company, self.plan, covered_team_ids=[self.team.id])
+        self.team.refresh_from_db()
+        self.assertEqual(self.team.subscription_status, 'active')
+        self.assertEqual(self.team.plan_id, self.plan.id)
+
+    def test_no_team_subscribe_endpoint_anymore(self):
+        self.client.force_authenticate(self.super_admin)
+        res = self.client.post(f'/api/teams/{self.team.id}/subscribe/', {'plan': self.plan.id}, format='json')
+        self.assertIn(res.status_code, (404, 405))

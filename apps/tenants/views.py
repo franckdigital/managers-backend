@@ -135,7 +135,8 @@ class CompanyViewSet(AuditLogMixin, viewsets.ModelViewSet):
         except SubscriptionPlan.DoesNotExist:
             return Response({'detail': 'Plan introuvable ou inactif.'}, status=404)
 
-        order = create_subscription_order(user, company, plan)
+        covered_teams = request.data.get('covered_teams') or []
+        order = create_subscription_order(user, company, plan, covered_team_ids=covered_teams)
         result, error = _start_subscription_payment(user, order, provider)
         if error is not None:
             return error
@@ -165,7 +166,10 @@ class CompanyViewSet(AuditLogMixin, viewsets.ModelViewSet):
         except SubscriptionPlan.DoesNotExist:
             return Response({'detail': 'Plan introuvable ou inactif.'}, status=404)
 
-        activate_company_subscription(company, plan, end_date=end_date)
+        activate_company_subscription(
+            company, plan, end_date=end_date,
+            covered_team_ids=(request.data.get('covered_teams') or None),
+        )
         company.refresh_from_db()
         return Response(CompanySerializer(company, context={'request': request}).data)
 
@@ -272,63 +276,40 @@ class TeamViewSet(CompanyScopedViewSetMixin, viewsets.ModelViewSet):
     filterset_fields = ['company', 'service', 'manager', 'subscription_status']
 
     def get_permissions(self):
-        # The DRH (hr) may browse teams and pay a team subscription, but not
-        # create/rename/delete teams nor activate a subscription for free.
-        if self.action in ('list', 'retrieve', 'subscribe'):
+        # The DRH (hr) may browse teams and attach/detach them to the company subscription,
+        # but not create/rename/delete teams.
+        if self.action in ('list', 'retrieve', 'attach_subscription', 'detach_subscription'):
             return [IsHR()]
         return super().get_permissions()
 
-    @action(detail=True, methods=['post'])
-    def subscribe(self, request, pk=None):
-        """Company admin or DRH initiates a subscription payment for a single team.
-        provider: cinetpay | cash | manual."""
-        from apps.payments.services import create_subscription_order
-        from apps.payments.serializers import OrderSerializer
+    @action(detail=True, methods=['post'], url_path='attach-subscription')
+    def attach_subscription(self, request, pk=None):
+        """« Rattacher » — copy the company's active subscription onto this team (free).
+        A separate paid team subscription no longer exists."""
+        from apps.tenants.services import attach_team_to_company_subscription
 
         team = self.get_object()
         if not _can_manage_subscription_for(request.user, team.company_id):
             return Response({'detail': 'Accès refusé.'}, status=403)
 
-        plan_id = request.data.get('plan')
-        provider = request.data.get('provider', 'cinetpay')
-        if not plan_id:
-            return Response({'detail': 'plan requis.'}, status=400)
-
         try:
-            plan = SubscriptionPlan.objects.get(pk=plan_id, is_active=True)
-        except SubscriptionPlan.DoesNotExist:
-            return Response({'detail': 'Plan introuvable ou inactif.'}, status=404)
+            attach_team_to_company_subscription(team)
+        except ValueError as exc:
+            return Response({'detail': str(exc)}, status=400)
 
-        order = create_subscription_order(request.user, None, plan, team=team)
-        result, error = _start_subscription_payment(request.user, order, provider)
-        if error is not None:
-            return error
+        team.refresh_from_db()
+        return Response(TeamSerializer(team, context={'request': request}).data)
 
-        return Response({
-            'order': OrderSerializer(order).data,
-            'redirect_url': result.redirect_url,
-        }, status=201)
-
-    @action(detail=True, methods=['post'], url_path='activate-subscription')
-    def activate_subscription(self, request, pk=None):
-        """Super admin manually activates a team subscription without going through payment."""
-        from apps.tenants.services import activate_team_subscription
-
-        if not (request.user.is_superuser or request.user.role == 'super_admin'):
-            return Response({'detail': 'Réservé au super admin.'}, status=403)
+    @action(detail=True, methods=['post'], url_path='detach-subscription')
+    def detach_subscription(self, request, pk=None):
+        """« Détacher » — remove the explicit team-level record (members keep company-wide access)."""
+        from apps.tenants.services import detach_team_from_subscription
 
         team = self.get_object()
-        plan_id = request.data.get('plan')
-        end_date = request.data.get('end_date') or None
-        if not plan_id:
-            return Response({'detail': 'plan requis.'}, status=400)
+        if not _can_manage_subscription_for(request.user, team.company_id):
+            return Response({'detail': 'Accès refusé.'}, status=403)
 
-        try:
-            plan = SubscriptionPlan.objects.get(pk=plan_id, is_active=True)
-        except SubscriptionPlan.DoesNotExist:
-            return Response({'detail': 'Plan introuvable ou inactif.'}, status=404)
-
-        activate_team_subscription(team, plan, end_date=end_date)
+        detach_team_from_subscription(team)
         team.refresh_from_db()
         return Response(TeamSerializer(team, context={'request': request}).data)
 

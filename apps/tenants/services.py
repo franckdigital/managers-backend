@@ -70,9 +70,28 @@ def _plan_end_date(plan, start):
     return start + timedelta(days=days)
 
 
-def activate_company_subscription(company, plan, start_date=None, end_date=None, amount_paid=0):
-    """Set a company's subscription to active and record a history entry."""
-    from apps.tenants.models import CompanySubscription
+def _write_team_subscription(team, plan, start, end):
+    from apps.tenants.models import TeamSubscription
+
+    team.plan = plan
+    team.subscription_status = 'active'
+    team.subscription_start = start
+    team.subscription_end = end
+    team.save(update_fields=['plan', 'subscription_status', 'subscription_start', 'subscription_end'])
+    TeamSubscription.objects.create(
+        team=team, plan=plan, status=TeamSubscription.STATUS_ACTIVE,
+        start_date=start, end_date=end, amount_paid=0,
+    )
+    return team
+
+
+def activate_company_subscription(company, plan, start_date=None, end_date=None, amount_paid=0,
+                                  covered_team_ids=None):
+    """Set a company's subscription to active and record a history entry. `covered_team_ids`
+    (optional) is the list of teams to explicitly attach to this subscription — attaching a
+    team just mirrors the company subscription onto it (same plan / same end date), it does
+    NOT restrict access: an empty list still means the whole company is covered."""
+    from apps.tenants.models import CompanySubscription, Team
 
     today = timezone.now().date()
     start = start_date or today
@@ -96,35 +115,39 @@ def activate_company_subscription(company, plan, start_date=None, end_date=None,
         end_date=end,
         amount_paid=amount_paid,
     )
+
+    if covered_team_ids:
+        allowed = company.get_descendant_ids()
+        for team in Team.objects.filter(id__in=covered_team_ids, company_id__in=allowed):
+            _write_team_subscription(team, plan, start, end)
+
     return company
 
 
-def activate_team_subscription(team, plan, start_date=None, end_date=None, amount_paid=0):
-    """Set a single team's subscription to active and record a history entry."""
-    from apps.tenants.models import TeamSubscription
-
+def attach_team_to_company_subscription(team):
+    """« Rattacher » : copy the nearest active company subscription (the team's own company
+    or a parent) onto the team — free, no payment. Raises ValueError if no active company
+    subscription with a plan is found."""
     today = timezone.now().date()
-    start = start_date or today
+    company = team.company
+    while company is not None:
+        if (company.subscription_status == 'active' and company.plan_id
+                and (company.subscription_end is None or company.subscription_end >= today)):
+            return _write_team_subscription(
+                team, company.plan, today, company.subscription_end or _plan_end_date(company.plan, today),
+            )
+        company = company.parent
+    raise ValueError("L'entreprise (ou une société mère) doit d'abord avoir un abonnement actif.")
 
-    if end_date is None:
-        end = _plan_end_date(plan, start)
-    else:
-        end = end_date if isinstance(end_date, date) else date.fromisoformat(str(end_date))
 
-    team.plan = plan
-    team.subscription_status = 'active'
-    team.subscription_start = start
-    team.subscription_end = end
+def detach_team_from_subscription(team):
+    """Undo « Rattacher » — clears the team-level record. The team's members keep access via
+    their company's subscription if it is still active (company-wide coverage)."""
+    team.plan = None
+    team.subscription_status = 'trial'
+    team.subscription_start = None
+    team.subscription_end = None
     team.save(update_fields=['plan', 'subscription_status', 'subscription_start', 'subscription_end'])
-
-    TeamSubscription.objects.create(
-        team=team,
-        plan=plan,
-        status=TeamSubscription.STATUS_ACTIVE,
-        start_date=start,
-        end_date=end,
-        amount_paid=amount_paid,
-    )
     return team
 
 

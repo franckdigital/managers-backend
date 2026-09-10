@@ -25,7 +25,11 @@ class Order(TimeStampedModel):
     )
     team = models.ForeignKey(
         'tenants.Team', on_delete=models.SET_NULL, null=True, blank=True, related_name='orders',
-        help_text='Renseigné pour un abonnement souscrit au niveau équipe.',
+        help_text='Obsolète — les équipes sont désormais rattachées à l\'abonnement de leur entreprise.',
+    )
+    covered_team_ids = models.JSONField(
+        default=list, blank=True,
+        help_text="Abonnement entreprise : ids des équipes à rattacher explicitement une fois le paiement confirmé.",
     )
     subscription_plan = models.ForeignKey(
         'tenants.SubscriptionPlan', on_delete=models.SET_NULL, null=True, blank=True, related_name='orders'
