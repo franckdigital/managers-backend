@@ -143,7 +143,7 @@ class BecomeTrainerView(generics.GenericAPIView):
 class UserViewSet(AuditLogMixin, CompanyScopedViewSetMixin, viewsets.ModelViewSet):
     queryset = User.objects.select_related('company', 'department', 'service', 'team', 'manager').all()
     permission_classes = [IsHR]
-    filterset_fields = ['role', 'department', 'service', 'team', 'manager', 'is_active']
+    filterset_fields = ['role', 'company', 'department', 'service', 'team', 'manager', 'is_active']
     search_fields = ['email', 'first_name', 'last_name', 'employee_id']
 
     def get_serializer_class(self):

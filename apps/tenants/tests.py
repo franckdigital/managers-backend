@@ -3,8 +3,10 @@ from datetime import timedelta
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.utils import timezone
+from rest_framework.test import APITestCase
 
-from apps.tenants.models import Company, SubscriptionPlan, Team
+from apps.core.constants import Roles
+from apps.tenants.models import Company, Department, SubscriptionPlan, Team
 from apps.tenants.services import has_active_team_subscription
 
 User = get_user_model()
@@ -82,3 +84,89 @@ class HasActiveTeamSubscriptionTests(TestCase):
         self.team.save()
         self.assertTrue(has_active_team_subscription(self.user, covered))
         self.assertFalse(has_active_team_subscription(self.user, other))
+
+
+class SubscriptionPaymentAccessTests(APITestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.plan = SubscriptionPlan.objects.create(
+            name='Enterprise', code='ent', plan_type=SubscriptionPlan.PLAN_TYPE_ENTERPRISE,
+            price=100000, billing_cycle='yearly', is_active=True,
+        )
+        cls.company = Company.objects.create(name='ACME')
+        cls.hr = User.objects.create_user(email='hr@acme.test', password='x', role=Roles.HR, company=cls.company)
+        cls.admin = User.objects.create_user(
+            email='admin@acme.test', password='x', role=Roles.COMPANY_ADMIN, company=cls.company,
+        )
+
+    def test_hr_can_pay_company_subscription_manually_and_it_activates(self):
+        self.client.force_authenticate(self.hr)
+        res = self.client.post(
+            f'/api/companies/{self.company.id}/subscribe/',
+            {'plan': self.plan.id, 'provider': 'manual'}, format='json',
+        )
+        self.assertEqual(res.status_code, 201, res.data)
+        self.company.refresh_from_db()
+        self.assertEqual(self.company.subscription_status, 'active')
+        self.assertEqual(self.company.plan_id, self.plan.id)
+
+    def test_hr_cannot_use_free_activate_endpoint(self):
+        self.client.force_authenticate(self.hr)
+        res = self.client.post(
+            f'/api/companies/{self.company.id}/activate-subscription/',
+            {'plan': self.plan.id}, format='json',
+        )
+        self.assertEqual(res.status_code, 403)
+
+    def test_company_admin_cannot_use_free_activate_endpoint(self):
+        self.client.force_authenticate(self.admin)
+        res = self.client.post(
+            f'/api/companies/{self.company.id}/activate-subscription/',
+            {'plan': self.plan.id}, format='json',
+        )
+        self.assertEqual(res.status_code, 403)
+
+
+class OrgStructureCreationTests(APITestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.super_admin = User.objects.create_user(
+            email='root2@example.com', password='x', role=Roles.SUPER_ADMIN, is_superuser=True,
+        )
+        cls.parent = Company.objects.create(name='Groupe')
+        cls.sub = Company.objects.create(name='Filiale A', parent=cls.parent)
+        cls.other = Company.objects.create(name='Autre société')
+        cls.admin = User.objects.create_user(
+            email='ca@groupe.test', password='x', role=Roles.COMPANY_ADMIN, company=cls.parent,
+        )
+
+    def test_super_admin_must_pick_company_for_team(self):
+        self.client.force_authenticate(self.super_admin)
+        res = self.client.post('/api/teams/', {'name': 'Sans société'}, format='json')
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('company', res.data.get('errors', res.data))
+
+    def test_super_admin_creates_team_on_chosen_subsidiary(self):
+        self.client.force_authenticate(self.super_admin)
+        res = self.client.post('/api/teams/', {'name': 'Support', 'company': self.sub.id}, format='json')
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(Team.objects.get(name='Support').company_id, self.sub.id)
+
+    def test_company_admin_can_create_team_on_own_subsidiary_not_on_foreign_company(self):
+        self.client.force_authenticate(self.admin)
+        ok = self.client.post('/api/teams/', {'name': 'T1', 'company': self.sub.id}, format='json')
+        self.assertEqual(ok.status_code, 201, ok.data)
+
+        ko = self.client.post('/api/teams/', {'name': 'T2', 'company': self.other.id}, format='json')
+        self.assertEqual(ko.status_code, 400)
+        self.assertIn('company', ko.data.get('errors', ko.data))
+
+    def test_department_company_must_match_when_creating_service(self):
+        self.client.force_authenticate(self.super_admin)
+        dept = Department.objects.create(company=self.sub, name='RH')
+        res = self.client.post(
+            '/api/services/',
+            {'name': 'Paie', 'company': self.other.id, 'department': dept.id}, format='json',
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('department', res.data.get('errors', res.data))

@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.core.mixins import AuditLogMixin, CompanyScopedViewSetMixin
-from apps.core.permissions import IsCompanyAdmin, IsSuperAdmin
+from apps.core.permissions import IsCompanyAdmin, IsHR, IsSuperAdmin
 from apps.tenants.models import (
     Company, CompanySubscription, Department, Service, SubscriptionPlan,
     Team, TeamSubscription, UserSubscription,
@@ -29,12 +29,13 @@ def _company_tree_ids(user):
 
 
 def _can_manage_subscription_for(user, company_id):
-    """True when the user may pay/manage a subscription for the given company id:
-    super admin, or a company admin whose own company owns that company (directly or via a
-    parent). The DRH (hr) role is intentionally excluded — activation is admin-only."""
+    """True when the user may pay a subscription for the given company id: super admin, or
+    a company admin / DRH (hr) whose own company owns that company (directly or via a
+    parent). Paying (Mobile Money or cash) is allowed for the DRH; only the super admin can
+    activate a subscription for free without a payment order (see `activate_subscription`)."""
     if user.is_superuser or user.role == 'super_admin':
         return True
-    if user.role not in ('company_admin', 'training_center_admin'):
+    if user.role not in ('company_admin', 'training_center_admin', 'hr'):
         return False
     return company_id in _company_tree_ids(user)
 
@@ -251,27 +252,35 @@ class B2CSubscribeView(APIView):
 
 
 class DepartmentViewSet(CompanyScopedViewSetMixin, viewsets.ModelViewSet):
-    queryset = Department.objects.all()
+    queryset = Department.objects.select_related('company').all()
     serializer_class = DepartmentSerializer
     permission_classes = [IsCompanyAdmin]
+    filterset_fields = ['company']
 
 
 class ServiceViewSet(CompanyScopedViewSetMixin, viewsets.ModelViewSet):
-    queryset = Service.objects.select_related('department').all()
+    queryset = Service.objects.select_related('department', 'company').all()
     serializer_class = ServiceSerializer
     permission_classes = [IsCompanyAdmin]
-    filterset_fields = ['department']
+    filterset_fields = ['company', 'department']
 
 
 class TeamViewSet(CompanyScopedViewSetMixin, viewsets.ModelViewSet):
     queryset = Team.objects.select_related('service', 'manager', 'plan', 'company').all()
     serializer_class = TeamSerializer
     permission_classes = [IsCompanyAdmin]
-    filterset_fields = ['service', 'manager', 'subscription_status']
+    filterset_fields = ['company', 'service', 'manager', 'subscription_status']
+
+    def get_permissions(self):
+        # The DRH (hr) may browse teams and pay a team subscription, but not
+        # create/rename/delete teams nor activate a subscription for free.
+        if self.action in ('list', 'retrieve', 'subscribe'):
+            return [IsHR()]
+        return super().get_permissions()
 
     @action(detail=True, methods=['post'])
     def subscribe(self, request, pk=None):
-        """Company admin initiates a subscription payment for a single team.
+        """Company admin or DRH initiates a subscription payment for a single team.
         provider: cinetpay | cash | manual."""
         from apps.payments.services import create_subscription_order
         from apps.payments.serializers import OrderSerializer
