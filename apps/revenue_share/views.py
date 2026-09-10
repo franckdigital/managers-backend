@@ -146,6 +146,7 @@ class EligibleRecipientsView(APIView):
             {
                 'id': u.id,
                 'name': u.get_full_name() or u.email,
+                'email': u.email,
                 'role': u.role,
                 'partner_default_rate': u.partner_default_rate,
             }

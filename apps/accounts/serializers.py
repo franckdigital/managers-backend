@@ -29,7 +29,7 @@ class UserSerializer(serializers.ModelSerializer):
             'company_subscription_status', 'has_subsidiaries', 'department', 'service', 'team', 'manager', 'manager_name', 'phone', 'avatar',
             'employee_id', 'job_title', 'hire_date', 'birth_date', 'country', 'bio', 'is_trainer_approved',
             'is_active', 'date_joined', 'last_active_at', 'payout_method', 'bank_account_name', 'bank_iban',
-            'permission_codes', 'b2c_subscription',
+            'partner_default_rate', 'permission_codes', 'b2c_subscription',
         )
         read_only_fields = ('date_joined', 'last_active_at')
 
@@ -70,6 +70,7 @@ class UserCreateSerializer(serializers.ModelSerializer):
         fields = (
             'id', 'email', 'password', 'first_name', 'last_name', 'role', 'company', 'department', 'service',
             'team', 'manager', 'phone', 'employee_id', 'job_title', 'hire_date',
+            'partner_default_rate', 'payout_method', 'bank_account_name', 'bank_iban',
         )
 
     def create(self, validated_data):
