@@ -18,11 +18,25 @@ class UserSubscriptionSerializer(serializers.ModelSerializer):
     currency = serializers.CharField(source='plan.currency', read_only=True)
     is_global = serializers.BooleanField(source='plan.is_global', read_only=True)
     included_course_titles = serializers.SerializerMethodField()
+    effective_status = serializers.SerializerMethodField()
+    is_current = serializers.SerializerMethodField()
 
     def get_included_course_titles(self, obj):
         if obj.plan.is_global:
             return []
         return list(obj.plan.included_courses.values_list('title', flat=True))
+
+    def get_effective_status(self, obj):
+        """`status` in DB can stay 'active' past `end_date` (no expiry job) — this reflects
+        reality: an 'active' row whose end date has passed is really 'expired'."""
+        from django.utils import timezone
+        if obj.status == 'active' and obj.end_date and obj.end_date < timezone.now().date():
+            return 'expired'
+        return obj.status
+
+    def get_is_current(self, obj):
+        from django.utils import timezone
+        return obj.status == 'active' and (obj.end_date is None or obj.end_date >= timezone.now().date())
 
     class Meta:
         model = UserSubscription
